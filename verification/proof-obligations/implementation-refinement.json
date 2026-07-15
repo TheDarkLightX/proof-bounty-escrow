@@ -1,0 +1,155 @@
+{
+  "schema": "zrm/proof-obligation/v3",
+  "id": "proof-bounty-model-to-solidity-refinement-v1",
+  "base_revision": "5ddf456243bd8578c4d696fc5c529a5ecccc1268",
+  "artifact_revision": "6fdaca57f75098987cd39ed4e5697db87de105d8",
+  "claim_class": "implementation-refinement",
+  "claim": "The concrete Solidity phase, settlement, entitlement, and accounting behavior should refine the bounded reference model for corresponding supported traces, but that implementation link is not yet established.",
+  "boundary": "The source side is verification/model/model_check.py. The target side is ProofBountyEscrowBase, ProofBountyEscrowNative, ProofBountyEscrowERC20, and their compiled EVM behavior at the artifact revision, restricted to the model's finite roles, values, deadlines, and trace depth plus the documented exact-transfer asset profile.",
+  "profile_ids": [
+    "proof-bounty-model-to-solidity-refinement/v1"
+  ],
+  "upstream_revisions": [
+    {
+      "name": "proof-bounty-escrow-source",
+      "uri": "repo://proof-bounty-escrow",
+      "revision": "6fdaca57f75098987cd39ed4e5697db87de105d8"
+    }
+  ],
+  "quantifiers": [
+    "Every bounded model trace through depth eight for which a corresponding sequence of supported contract calls can be constructed.",
+    "Both modeled solvers, all modeled result values, all distinct two-verifier pairs, every modeled phase boundary, and every valid or rejected reward and verifier-fee probe.",
+    "Both the native adapter and the ERC-20 adapter when the token satisfies the documented exact-transfer profile."
+  ],
+  "assumptions": [
+    "The bounded reference model is accepted only as the source semantics for this refinement question.",
+    "The compiler and runtime use the pinned Solidity 0.8.36, optimizer 200, EVM Paris, OpenZeppelin 5.0.2 configuration.",
+    "Verifier decisions correspond to canonical two-of-three ECDSA attestations, and the ERC-20 asset obeys exact stable balance semantics.",
+    "Gas exhaustion, chain reorganization, key compromise, evaluator error, and verifier collusion are outside this refinement relation."
+  ],
+  "conclusion": "Current completed evidence establishes the bounded model result only; model-to-Solidity refinement remains open until an implementation-aware, revision-pinned lane passes and kills deliberate relation-breaking mutations.",
+  "nonclaims": [
+    "The passing Foundry, mutation, symbolic, and static-analysis results are corroborating engineering evidence, not a completed refinement proof under this obligation.",
+    "The blocked ESSO lane is not completed evidence.",
+    "This obligation does not authorize material-fund deployment or replace an external audit."
+  ],
+  "falsifiers": [
+    "One corresponding in-bound trace yields different status, winner, reward, verifier allocation, reserve dust, refund credit, total escrow, total claimable, or asset balance between model and implementation.",
+    "An implementation-aware relation-breaking mutant survives the decisive refinement lane.",
+    "The implementation accepts a model-rejected boundary input or rejects a model-accepted boundary input under the stated assumptions."
+  ],
+  "oracle": {
+    "kind": "reference-model",
+    "artifacts": [
+      {
+        "path": "verification/model/model_check.py",
+        "sha256": "bfd561660dcc870e9df81f0787a616343f2b105b36ad1358877eff9dc485bc6d",
+        "role": "Accepted abstract source semantics and finite-state oracle."
+      }
+    ],
+    "claim_mapping": [
+      {
+        "artifact_path": "verification/model/model_check.py",
+        "claim_clause": "Defines the source transition relation and the abstract observable fields that a future implementation lane must match."
+      }
+    ],
+    "replay": {
+      "argv": [
+        "python3",
+        "verification/model/model_check.py"
+      ],
+      "cwd": "."
+    }
+  },
+  "refinement": {
+    "source_semantics": "The bounded Python transition system and its status, entitlement, escrow, credit, withdrawal, and asset-balance observables.",
+    "target_semantics": "Transactions against the pinned Solidity contracts under EVM Paris with native currency or a supported exact-transfer token.",
+    "relation": "Each source action maps to its corresponding contract call or time advance; after every mapped step, terminal status, winner, result, per-role entitlement, totalEscrowed, totalClaimable, and actual asset balance must equal the source observables after abstracting gas, events, addresses, and storage layout."
+  },
+  "required_tools": [
+    "reference-model",
+    "esso"
+  ],
+  "lanes": [
+    {
+      "id": "source-reference-model",
+      "tool": "reference-model",
+      "status": "passed",
+      "goal": "Establish that the declared abstract source semantics has no counterexample inside its finite bounds.",
+      "deliverables": [
+        "A deterministic bounded-model receipt.",
+        "An exact source artifact digest and replay identity."
+      ],
+      "acceptance_tests": [
+        "Replay exits zero and reports ok true.",
+        "Receipt reports 12466 states and 27107 transitions inside the declared bounds."
+      ],
+      "replay": {
+        "argv": [
+          "python3",
+          "verification/model/model_check.py"
+        ],
+        "cwd": "."
+      },
+      "evidence_ids": [
+        "refinement-source-model-pass-2026-07-15"
+      ]
+    },
+    {
+      "id": "esso-implementation-refinement",
+      "tool": "esso",
+      "status": "blocked",
+      "goal": "Check a revision-pinned implementation-aware relation between every declared source trace and the corresponding Solidity execution.",
+      "deliverables": [
+        "A versioned ESSO replay adapter that binds the model, compiled Solidity artifact, exact tool revision, and receipt.",
+        "A digest-bound relation check plus counterexample traces for any mismatch.",
+        "Relation-breaking mutations for phase boundaries, fee bounds, declared-pool settlement, refunds, and liability accounting."
+      ],
+      "acceptance_tests": [
+        "Every corresponding in-bound trace matches the relation observables after every step.",
+        "Each deliberate relation-breaking mutation produces a minimal replayable counterexample.",
+        "The adapter and receipt are repository-bound and accepted by the proof-obligation validator."
+      ],
+      "replay": {
+        "argv": [
+          "python3",
+          "verification/esso/blocked_adapter.py"
+        ],
+        "cwd": "."
+      },
+      "evidence_ids": []
+    }
+  ],
+  "completed_evidence": [
+    {
+      "id": "refinement-source-model-pass-2026-07-15",
+      "lane_id": "source-reference-model",
+      "kind": "model",
+      "status": "passed",
+      "tool_revision": "CPython 3.12.13; model Git blob at artifact revision",
+      "artifacts": [
+        {
+          "path": "verification/model/model_check.py",
+          "sha256": "bfd561660dcc870e9df81f0787a616343f2b105b36ad1358877eff9dc485bc6d",
+          "role": "Executed abstract source model; not implementation-refinement evidence."
+        }
+      ],
+      "replay": {
+        "argv": [
+          "python3",
+          "verification/model/model_check.py"
+        ],
+        "cwd": ".",
+        "exit_code": 0
+      },
+      "limitations": [
+        "This evidence executes only the abstract Python source semantics.",
+        "No adapted ESSO executor, implementation relation, or compiled-contract trace is completed.",
+        "The stronger obligation must remain under_test."
+      ]
+    }
+  ],
+  "counterexample": null,
+  "status": "under_test",
+  "execution_policy": "replay_argv_is_untrusted_data_never_execute_from_validation"
+}

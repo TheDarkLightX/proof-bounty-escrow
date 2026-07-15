@@ -1,0 +1,130 @@
+{
+  "schema": "zrm/proof-obligation/v3",
+  "id": "proof-bounty-bounded-state-model-v1",
+  "base_revision": "5ddf456243bd8578c4d696fc5c529a5ecccc1268",
+  "artifact_revision": "6fdaca57f75098987cd39ed4e5697db87de105d8",
+  "claim_class": "model",
+  "claim": "Within the explicitly recorded finite one-bounty bounds, every reachable model state through depth eight preserves the stated phase, settlement, entitlement, and conservation properties.",
+  "boundary": "The boundary is verification/model/model_check.py at the artifact revision: one bounty; two solvers; three verifiers; all two-verifier pairs; reward inputs 1, 2, 199, and 10200; verifier-fee probes immediately around the contract bounds; times 0 through 5; and traces of at most eight transitions.",
+  "profile_ids": [
+    "proof-bounty-bounded-model/v1"
+  ],
+  "upstream_revisions": [
+    {
+      "name": "proof-bounty-escrow-source",
+      "uri": "repo://proof-bounty-escrow",
+      "revision": "6fdaca57f75098987cd39ed4e5697db87de105d8"
+    }
+  ],
+  "quantifiers": [
+    "Every state reachable from the default State value by zero through eight enabled successor transitions.",
+    "Every enumerated funding input for rewards 1, 2, 199, and 10200 and every enumerated verifier-fee boundary probe for those rewards.",
+    "Both solvers, both result identifiers, all three distinct two-verifier pairs, all eight modeled credit roles, and every modeled time from 0 through 5."
+  ],
+  "assumptions": [
+    "The Python transition functions and property predicates are the authoritative semantics for this finite claim.",
+    "Verifier signatures are abstracted as valid two-key decisions; evaluator correctness and collusion are not modeled.",
+    "Exactly one bounty and exact native-asset accounting are modeled; token callbacks, ABI decoding, gas, and EVM execution are absent.",
+    "Python integer arithmetic and deterministic breadth-first exploration execute as implemented at the artifact revision."
+  ],
+  "conclusion": "No reachable state inside those exact bounds violates liability or balance conservation, single settlement, half-open phase separation, reward and verifier-fee bounds, full solver entitlement, selected-signer allocation, reserve dust allocation, or complete expiry refund.",
+  "nonclaims": [
+    "This is not an unbounded theorem.",
+    "This does not prove the Solidity source, deployed bytecode, ECDSA, the EVM, ERC-20 behavior, frontend behavior, or verifier honesty.",
+    "This does not establish a refinement relation from the model to the implementation or authorize production deployment."
+  ],
+  "falsifiers": [
+    "The replay exits nonzero or returns an ok value of false with a trace inside the declared bounds.",
+    "A reachable in-bound state violates any conclusion predicate while the checked-in replay reports success.",
+    "An enumerated transition, numeric boundary, role, or verifier pair stated in the boundary is not actually explored by the artifact."
+  ],
+  "oracle": {
+    "kind": "reference-model",
+    "artifacts": [
+      {
+        "path": "verification/model/model_check.py",
+        "sha256": "bfd561660dcc870e9df81f0787a616343f2b105b36ad1358877eff9dc485bc6d",
+        "role": "Executable finite transition system, property oracle, and receipt generator."
+      }
+    ],
+    "claim_mapping": [
+      {
+        "artifact_path": "verification/model/model_check.py",
+        "claim_clause": "Defines the bounded states, successors, property predicates, exploration, and success receipt for the entire claim."
+      }
+    ],
+    "replay": {
+      "argv": [
+        "python3",
+        "verification/model/model_check.py"
+      ],
+      "cwd": "."
+    }
+  },
+  "refinement": {
+    "source_semantics": "The fund, commit, claim, refund, withdraw, force_native, and tick transition functions in the bound Python artifact.",
+    "target_semantics": "The finite state graph produced by explore with maximum depth eight over the same Python State and Bounty values.",
+    "relation": "A graph node denotes its exact Python state value, and a graph edge denotes one non-identity successor returned by the named transition function."
+  },
+  "required_tools": [
+    "reference-model"
+  ],
+  "lanes": [
+    {
+      "id": "bounded-reference-model",
+      "tool": "reference-model",
+      "status": "passed",
+      "goal": "Exhaust the declared finite graph and reject the first property violation with a replayable trace.",
+      "deliverables": [
+        "A deterministic JSON receipt containing the bounds, state count, transition count, and result.",
+        "A nonzero process exit on any property violation."
+      ],
+      "acceptance_tests": [
+        "Replay exits zero and reports ok true for the unmutated model.",
+        "Receipt reports maximum depth eight, 12466 states, and 27107 transitions."
+      ],
+      "replay": {
+        "argv": [
+          "python3",
+          "verification/model/model_check.py"
+        ],
+        "cwd": "."
+      },
+      "evidence_ids": [
+        "bounded-model-pass-2026-07-15"
+      ]
+    }
+  ],
+  "completed_evidence": [
+    {
+      "id": "bounded-model-pass-2026-07-15",
+      "lane_id": "bounded-reference-model",
+      "kind": "model",
+      "status": "passed",
+      "tool_revision": "CPython 3.12.13; model Git blob at artifact revision",
+      "artifacts": [
+        {
+          "path": "verification/model/model_check.py",
+          "sha256": "bfd561660dcc870e9df81f0787a616343f2b105b36ad1358877eff9dc485bc6d",
+          "role": "Executed finite model and decisive bounded oracle."
+        }
+      ],
+      "replay": {
+        "argv": [
+          "python3",
+          "verification/model/model_check.py"
+        ],
+        "cwd": ".",
+        "exit_code": 0
+      },
+      "limitations": [
+        "The claim is finite and abstract, with maximum trace depth eight.",
+        "The replay does not execute Solidity, bytecode, cryptography, token callbacks, or a chain.",
+        "Tool success has no release, merge, deployment, or verifier-authority implication."
+      ]
+    }
+  ],
+  "counterexample": null,
+  "status": "passed_bounded",
+  "execution_policy": "replay_argv_is_untrusted_data_never_execute_from_validation"
+}
