@@ -165,15 +165,21 @@ gate verifier requests on public phase/commitment state. Re-review found no rema
 theft, replay, reentrancy, or conservation defect under the documented exact-transfer asset and
 honest-threshold assumptions. This was an internal adversarial review, not an external audit.
 
+A clean local deployment rehearsal also exposed that `cast` annotates some decoded integers (for
+example, `10000 [1e4]`) and the first manifest parser rejected that valid form. The parser was
+hardened to accept only strict decimal/hex integers with an optional bracketed annotation, reject
+trailing data, and a regression test was added to the default deployment-configuration gate.
+
 The clean size build reports template runtime sizes of 10,806 bytes for the native adapter and
 12,112 bytes for the ERC-20 adapter, below the 24,576-byte EIP-170 limit under recorded settings.
 The larger audit *script* is not deployed. Constructor immutables alter deployed runtime bytes, so
 template hashes are not deployment evidence.
 
-The local operator rehearsal deployed the native adapter to an isolated Anvil chain using chain ID
-943, replayed immutable/runtime checks, read the finalized creation receipt, and generated/checked
-an observation. A local rehearsal is evidence about tooling mechanics only, not PulseChain Testnet
-V4 compatibility or a public deployment.
+The local operator rehearsal independently deployed both the native adapter and the ERC-20 adapter
+with a mock exact-transfer token to isolated Anvil chains using chain ID 943, replayed
+immutable/runtime checks, read each finalized creation receipt, and generated/checked an
+observation for each variant. A local rehearsal is evidence about tooling mechanics only, not
+PulseChain Testnet V4 compatibility, token approval, or a public deployment.
 
 ## 8. Assurance matrix
 
@@ -220,9 +226,9 @@ make check
 ```
 
 `make check` covers Forge formatting/build/lint/tests, both invariant campaigns, model checks, both
-mutation layers, static-client tests/build/audit/reproducibility, schema syntax, and two clean
-Solidity builds. The pinned Slither job runs separately in CI. Halmos is intentionally separate;
-run and archive its four exact obligations explicitly.
+mutation layers, static-client tests/build/audit/reproducibility, deployment-parser regression
+tests, schema syntax, and two clean Solidity builds. The pinned Slither job runs separately in CI.
+Halmos is intentionally separate; run and archive its four exact obligations explicitly.
 
 Preserve versions, complete output, exit codes, source revision, and artifact hashes. Evidence
 without revision binding is historical context, not proof about a later build.
