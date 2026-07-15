@@ -49,6 +49,7 @@ app-check:
 	npm --prefix app audit --omit=dev
 
 deployment-config:
+	python3 -m unittest scripts/test_generate_deployment_manifest.py
 	jq empty deployments/manifest.schema.json deployments/networks.schema.json deployments/networks.json schemas/*.json
 	jq --exit-status '.compiler == "0.8.36" and .evmVersion == "paris" and ([.networks[].chainId] | length) == ([.networks[].chainId] | unique | length) and ([.networks[].key] | length) == ([.networks[].key] | unique | length)' deployments/networks.json >/dev/null
 

@@ -29,6 +29,7 @@ HASH = re.compile(r"^0x[0-9a-fA-F]{64}$")
 ADDRESS = re.compile(r"^0x[0-9a-fA-F]{40}$")
 REVISION = re.compile(r"^[0-9a-f]{40}$")
 HEX_DATA = re.compile(r"^0x(?:[0-9a-fA-F]{2})*$")
+INTEGER_TEXT = re.compile(r"^(0[xX][0-9a-fA-F]+|[0-9]+)(?:\s+\[[^\]\r\n]+\])?$")
 
 
 def command(argv: list[str], *, cwd: Path = ROOT, timeout: int = 90) -> str:
@@ -53,7 +54,11 @@ def parse_int(value: object, label: str) -> int:
     if isinstance(value, int):
         result = value
     elif isinstance(value, str):
-        result = int(value, 0)
+        normalized = value.strip().strip('"')
+        matched = INTEGER_TEXT.fullmatch(normalized)
+        if matched is None:
+            raise ValueError(f"{label} is not an integer")
+        result = int(matched.group(1), 0)
     else:
         raise ValueError(f"{label} is not an integer")
     if result < 0:
