@@ -12,6 +12,22 @@ import {ProofBountyEscrowERC20} from "../contracts/ProofBountyEscrowERC20.sol";
 import {IProofBountyEscrow} from "../contracts/interfaces/IProofBountyEscrow.sol";
 import {AdversarialERC20} from "../contracts/mocks/AdversarialERC20.sol";
 
+contract ReentrantWithdrawalCallback {
+    IProofBountyEscrow internal immutable escrow;
+    address internal immutable destination;
+    uint256 internal immutable amount;
+
+    constructor(IProofBountyEscrow escrow_, address destination_, uint256 amount_) {
+        escrow = escrow_;
+        destination = destination_;
+        amount = amount_;
+    }
+
+    function reenter() external {
+        escrow.withdraw(destination, amount);
+    }
+}
+
 contract ProofBountyEscrowAdversarialTest is Test {
     string internal constant NAME = "Proof Bounty Escrow";
     uint256 internal constant REWARD = 100 ether;
@@ -53,6 +69,41 @@ contract ProofBountyEscrowAdversarialTest is Test {
         assertEq(escrow.nextBountyId(), 1);
         assertEq(escrow.accountedBalance(), 0);
         assertEq(funding, escrow.requiredFunding(REWARD, escrow.minimumVerifierFee(REWARD)));
+    }
+
+    function test_ERC20InsolvencyRejectsNewFundingAndExistingWithdrawal() public {
+        (AdversarialERC20 token, ProofBountyEscrowERC20 escrow) = _deployTokenEscrow();
+        uint256 firstId = _createTokenBounty(escrow, REWARD, refundRecipient);
+        uint256 liability = escrow.getBounty(firstId).fundedAmount;
+        token.confiscate(address(escrow), 1);
+
+        assertEq(escrow.actualBalance(), liability - 1);
+        assertEq(escrow.accountedBalance(), liability);
+        assertFalse(escrow.isSolvent());
+
+        uint256 sponsorBalance = token.balanceOf(sponsor);
+        vm.prank(sponsor);
+        vm.expectRevert(abi.encodeWithSelector(ProofBountyEscrowBase.InsolventAsset.selector, liability - 1, liability));
+        escrow.createBounty(_request(REWARD / 2, refundRecipient));
+
+        assertEq(token.balanceOf(sponsor), sponsorBalance);
+        assertEq(escrow.nextBountyId(), 2);
+        assertEq(escrow.accountedBalance(), liability);
+
+        vm.warp(escrow.getBounty(firstId).claimDeadline);
+        escrow.refund(firstId);
+        vm.prank(refundRecipient);
+        vm.expectRevert(abi.encodeWithSelector(ProofBountyEscrowBase.InsolventAsset.selector, liability - 1, liability));
+        escrow.withdraw(destination, liability);
+
+        assertEq(escrow.claimable(refundRecipient), liability);
+        assertEq(token.balanceOf(destination), 0);
+
+        token.mint(address(escrow), 1);
+        vm.prank(refundRecipient);
+        escrow.withdraw(destination, liability);
+        assertEq(token.balanceOf(destination), liability);
+        assertEq(escrow.accountedBalance(), 0);
     }
 
     function test_FalseReturnAtWithdrawalRestoresTransferAndEveryAccountingEffect() public {
@@ -146,24 +197,25 @@ contract ProofBountyEscrowAdversarialTest is Test {
         assertTrue(escrow.isSolvent());
     }
 
-    function test_TransferCallbackCannotReenterWithdrawalForCreditedTokenContract() public {
+    function test_TransferCallbackCannotReenterWithdrawalForCreditedContract() public {
         (AdversarialERC20 token, ProofBountyEscrowERC20 escrow) = _deployTokenEscrow();
-        uint256 bountyId = _createTokenBounty(escrow, REWARD, address(token));
+        uint256 funding = escrow.requiredFunding(REWARD, escrow.minimumVerifierFee(REWARD));
+        ReentrantWithdrawalCallback receiver =
+            new ReentrantWithdrawalCallback(IProofBountyEscrow(address(escrow)), destination, funding);
+        uint256 bountyId = _createTokenBounty(escrow, REWARD, address(receiver));
         uint256 funded = escrow.getBounty(bountyId).fundedAmount;
         vm.warp(escrow.getBounty(bountyId).claimDeadline);
         escrow.refund(bountyId);
-        token.configureCallback(
-            address(escrow), abi.encodeCall(IProofBountyEscrow.withdraw, (destination, funded)), true, false
-        );
+        token.configureCallback(address(receiver), abi.encodeCall(ReentrantWithdrawalCallback.reenter, ()), true, false);
 
-        vm.prank(address(token));
+        vm.prank(address(receiver));
         escrow.withdraw(destination, funded);
 
         assertTrue(token.callbackAttempted());
         assertFalse(token.callbackSucceeded());
         assertEq(_selector(token.callbackReturnData()), ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
         assertEq(token.balanceOf(destination), funded);
-        assertEq(escrow.claimable(address(token)), 0);
+        assertEq(escrow.claimable(address(receiver)), 0);
         assertEq(escrow.totalClaimable(), 0);
         assertTrue(escrow.isSolvent());
     }
@@ -171,7 +223,7 @@ contract ProofBountyEscrowAdversarialTest is Test {
     function test_PermissionlessRefundCallbackPreservesConservationDuringWithdrawal() public {
         (AdversarialERC20 token, ProofBountyEscrowERC20 escrow) = _deployTokenEscrow();
         uint256 callbackRefundId = _createTokenBounty(escrow, REWARD / 2, refundRecipient);
-        uint256 withdrawalId = _createTokenBounty(escrow, REWARD, address(token));
+        uint256 withdrawalId = _createTokenBounty(escrow, REWARD, refundRecipient);
         uint256 withdrawalAmount = escrow.getBounty(withdrawalId).fundedAmount;
         uint256 callbackRefundAmount = escrow.getBounty(callbackRefundId).fundedAmount;
         vm.warp(escrow.getBounty(withdrawalId).claimDeadline);
@@ -180,7 +232,7 @@ contract ProofBountyEscrowAdversarialTest is Test {
             address(escrow), abi.encodeCall(IProofBountyEscrow.refund, (callbackRefundId)), true, false
         );
 
-        vm.prank(address(token));
+        vm.prank(refundRecipient);
         escrow.withdraw(destination, withdrawalAmount);
 
         assertTrue(token.callbackSucceeded());
@@ -213,7 +265,7 @@ contract ProofBountyEscrowAdversarialTest is Test {
     function test_HighSSignatureMalleationIsRejectedWithoutStateChange() public {
         (uint256 bountyId, IProofBountyEscrow.Claim memory result) = _committedNativeResult("high-s");
         IProofBountyEscrow.VerifierSignature[2] memory signatures = _signatures(nativeEscrow, result);
-        bytes32 digest = nativeEscrow.attestationDigest(result);
+        bytes32 digest = nativeEscrow.attestationDigest(result, 3);
         (uint8 v, bytes32 r, bytes32 lowS) = vm.sign(verifierKeys[0], digest);
         bytes32 highS = bytes32(SECP256K1_N - uint256(lowS));
         uint8 flippedV = v == 27 ? 28 : 27;
@@ -319,7 +371,7 @@ contract ProofBountyEscrowAdversarialTest is Test {
         view
         returns (IProofBountyEscrow.VerifierSignature[2] memory signatures)
     {
-        bytes32 digest = escrow.attestationDigest(result);
+        bytes32 digest = escrow.attestationDigest(result, 3);
         for (uint8 i; i < 2; ++i) {
             (uint8 v, bytes32 r, bytes32 s) = vm.sign(verifierKeys[i], digest);
             signatures[i] =

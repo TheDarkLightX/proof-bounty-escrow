@@ -58,6 +58,7 @@ describe("absolute verifier-pool ABI", () => {
       "specificationHash",
       "termsHash",
       "verifierSetHash",
+      "signerBitmap",
       "claimDeadline",
     ]);
   });
@@ -84,9 +85,10 @@ describe("absolute verifier-pool ABI", () => {
         specificationHash: `0x${"55".repeat(32)}`,
         termsHash: `0x${"66".repeat(32)}`,
         verifierSetHash: `0x${"77".repeat(32)}`,
+        signerBitmap: 3,
         claimDeadline: 2_000_000_000n,
       },
     });
-    expect(digest).toBe("0x719c144c2af2972c2f7610692b77b186dce075a490220012de2944fe648232db");
+    expect(digest).toBe("0x7292a134d2a523a1177aca8765708eaf4b63c793bb27e238dc33cc8a5bf903c4");
   });
 });

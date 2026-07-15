@@ -61,14 +61,17 @@ export interface BountyView {
   resultDigest: Hex;
 }
 
-export interface ClaimPackage {
-  schemaVersion: 1;
+export interface SolverRecoveryPackage {
+  schema: "proof-bounty-solver-recovery/v1";
   chainId: number;
-  contractAddress: Address;
-  bountyId: string;
-  solver: Address;
-  resultDigest: Hex;
-  salt: Hex;
+  escrow: Address;
+  deploymentId: Hex;
+  claim: {
+    bountyId: string;
+    solver: Address;
+    resultDigest: Hex;
+    salt: Hex;
+  };
   commitment: Hex;
 }
 

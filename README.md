@@ -37,12 +37,25 @@ For commit deadline `C` and claim deadline `D`:
 
 The sponsor pays the reward, a fixed 2% DevCo fee, a fixed 0.5% security-reserve fee, and an
 explicit verifier pool from `max(2 smallest units, floor(0.5% of reward))` through 100% of reward.
-The two signing verifiers split that pool; profiles and sponsors can therefore price real
+The exact two-verifier pair is signed and splits that pool; profiles and sponsors can therefore price real
 evaluation work instead of being trapped by a one-size-fits-all percentage. The solver receives
 the full advertised reward. If no result is paid, the immutable refund recipient receives the
 entire funded amount, including every proposed fee.
 
 There is no protocol token.
+
+V1 is deliberately not the final evaluation-market mechanism: reviewers are paid only when their
+signatures settle an accepted result, so rejection and unused review can be unpaid. The
+[V2 research specification](docs/evaluation-market-v2.md) designs prefunded, outcome-neutral
+decision receipts, assigned work, availability quotes, stronger evaluator tiers, and exact proof
+obligations without pretending that a token or fee creates dollars.
+
+Fixed signing keys are also not the target verifier architecture. They remove mutable admin power
+but make compromise and unavailability permanent. The [keyless ZK settlement design](docs/zk-settlement-v2.md)
+instead freezes public verifier code and an evaluator image/circuit identifier, then binds every
+value-moving proof to the exact bounty, solver commitment, artifacts, economics, and deadlines.
+V1 should be treated only as a capped attestation pilot while that separate contract is specified,
+implemented, and audited.
 
 ## Build and verify locally
 
@@ -78,6 +91,10 @@ registry. IPFS hosting does not make public-chain data private.
 - [Protocol specification](docs/specification.md)
 - [Threat model](docs/threat-model.md)
 - [Tokenomics](docs/tokenomics.md)
+- [Evaluation market V2 research specification](docs/evaluation-market-v2.md)
+- [Keyless ZK settlement design](docs/zk-settlement-v2.md)
+- [Marketplace website, IPFS, indexing, and ChatGPT architecture](docs/marketplace-architecture.md)
+- [PulseTensor and PulseChain research roadmap](docs/pulsetensor-research-roadmap.md)
 - [Privacy model](docs/privacy.md)
 - [Cross-chain design](docs/cross-chain.md)
 - [Security evidence](docs/security-evidence.md)

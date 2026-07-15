@@ -11,13 +11,30 @@ import {IProofBountyEscrow} from "./interfaces/IProofBountyEscrow.sol";
 /// @notice Immutable, chain-local escrow for objectively replayable proof bounties.
 /// @dev A verifier signature means only that the frozen evaluator accepted the bound result digest.
 abstract contract ProofBountyEscrowBase is IProofBountyEscrow, EIP712, ReentrancyGuard {
+    /// @dev Static tuple used to keep canonical EIP-712 ABI encoding readable and below stack limits.
+    struct AcceptedResultData {
+        bytes32 deploymentId;
+        uint256 bountyId;
+        address solver;
+        bytes32 commitment;
+        bytes32 resultDigest;
+        uint256 reward;
+        uint256 verifierFee;
+        bytes32 profileId;
+        bytes32 specificationHash;
+        bytes32 termsHash;
+        bytes32 verifierSetHash;
+        uint8 signerBitmap;
+        uint64 claimDeadline;
+    }
+
     string public constant PROTOCOL_VERSION = "1";
     bytes32 public constant PROTOCOL_ID = keccak256("proof-bounty-escrow/v1");
     bytes32 public constant COMMITMENT_TYPEHASH = keccak256(
         "SolverCommitment(bytes32 deploymentId,uint256 bountyId,address solver,bytes32 resultDigest,bytes32 salt)"
     );
     bytes32 public constant ATTESTATION_TYPEHASH = keccak256(
-        "AcceptedResult(bytes32 deploymentId,uint256 bountyId,address solver,bytes32 commitment,bytes32 resultDigest,uint256 reward,uint256 verifierFee,bytes32 profileId,bytes32 specificationHash,bytes32 termsHash,bytes32 verifierSetHash,uint64 claimDeadline)"
+        "AcceptedResult(bytes32 deploymentId,uint256 bountyId,address solver,bytes32 commitment,bytes32 resultDigest,uint256 reward,uint256 verifierFee,bytes32 profileId,bytes32 specificationHash,bytes32 termsHash,bytes32 verifierSetHash,uint8 signerBitmap,uint64 claimDeadline)"
     );
 
     uint16 public constant BPS_DENOMINATOR = 10_000;
@@ -62,9 +79,11 @@ abstract contract ProofBountyEscrowBase is IProofBountyEscrow, EIP712, Reentranc
     error RefundNotAvailable();
     error InvalidCommitment();
     error InvalidVerifierOrder();
+    error InvalidSignerBitmap();
     error InvalidVerifierSignature();
     error NothingToWithdraw();
     error InsufficientClaimable();
+    error InsolventAsset(uint256 actual, uint256 accounted);
     error AssetTransferFailed();
 
     constructor(
@@ -79,6 +98,7 @@ abstract contract ProofBountyEscrowBase is IProofBountyEscrow, EIP712, Reentranc
         if (
             devCo_ == address(0) || securityReserve_ == address(0) || devCo_ == securityReserve_
                 || devCo_ == address(this) || securityReserve_ == address(this)
+                || (asset_ != address(0) && (devCo_ == asset_ || securityReserve_ == asset_))
         ) {
             revert InvalidAddress();
         }
@@ -137,14 +157,14 @@ abstract contract ProofBountyEscrowBase is IProofBountyEscrow, EIP712, Reentranc
         }
         if (
             result.solver == address(0) || result.resultDigest == bytes32(0) || result.salt == bytes32(0)
-                || isVerifier[result.solver]
+                || isVerifier[result.solver] || (asset != address(0) && result.solver == asset)
         ) revert InvalidBounty();
 
         bytes32 commitment_ = _computeCommitment(result.bountyId, result.solver, result.resultDigest, result.salt);
         if (commitments[result.bountyId][result.solver] != commitment_) revert InvalidCommitment();
 
-        _verifyAttestations(result, bounty, commitment_, signatures);
-        _settleBounty(result, bounty, commitment_, signatures);
+        (bytes32 digest, uint8 signerBitmap) = _verifyAttestations(result, bounty, commitment_, signatures);
+        _settleBounty(result, bounty, commitment_, signatures, digest, signerBitmap);
     }
 
     function _verifyAttestations(
@@ -152,14 +172,11 @@ abstract contract ProofBountyEscrowBase is IProofBountyEscrow, EIP712, Reentranc
         Bounty storage bounty,
         bytes32 commitment_,
         VerifierSignature[VERIFIER_THRESHOLD] calldata signatures
-    ) internal view {
-        if (signatures[0].verifierIndex >= signatures[1].verifierIndex) {
-            revert InvalidVerifierOrder();
-        }
-        bytes32 digest = _attestationDigest(result, bounty, commitment_);
+    ) internal view returns (bytes32 digest, uint8 signerBitmap) {
+        signerBitmap = _signerBitmap(signatures[0].verifierIndex, signatures[1].verifierIndex);
+        digest = _attestationDigest(result, bounty, commitment_, signerBitmap);
         for (uint256 i; i < VERIFIER_THRESHOLD; ++i) {
             uint8 verifierIndex = signatures[i].verifierIndex;
-            if (verifierIndex >= VERIFIER_COUNT) revert InvalidVerifierOrder();
             if (ECDSA.recover(digest, signatures[i].signature) != _verifiers[verifierIndex]) {
                 revert InvalidVerifierSignature();
             }
@@ -170,7 +187,9 @@ abstract contract ProofBountyEscrowBase is IProofBountyEscrow, EIP712, Reentranc
         Claim calldata result,
         Bounty storage bounty,
         bytes32 commitment_,
-        VerifierSignature[VERIFIER_THRESHOLD] calldata signatures
+        VerifierSignature[VERIFIER_THRESHOLD] calldata signatures,
+        bytes32 digest,
+        uint8 signerBitmap
     ) internal {
         bounty.status = BountyStatus.Paid;
         bounty.winner = result.solver;
@@ -191,6 +210,17 @@ abstract contract ProofBountyEscrowBase is IProofBountyEscrow, EIP712, Reentranc
         claimable[securityReserve] += securityFee + verifierRemainder;
 
         emit BountyPaid(result.bountyId, result.solver, commitment_, result.resultDigest);
+        emit SettlementRecorded(
+            result.bountyId,
+            digest,
+            signerBitmap,
+            _verifiers[signatures[0].verifierIndex],
+            _verifiers[signatures[1].verifierIndex],
+            bounty.reward,
+            devFee,
+            verifierShare,
+            securityFee + verifierRemainder
+        );
     }
 
     /// @notice Converts an expired open bounty into a pull credit for its immutable refund recipient.
@@ -208,14 +238,20 @@ abstract contract ProofBountyEscrowBase is IProofBountyEscrow, EIP712, Reentranc
     }
 
     function withdraw(address destination, uint256 amount) external nonReentrant {
-        if (destination == address(0) || destination == address(this)) revert InvalidAddress();
+        if (destination == address(0) || destination == address(this) || (asset != address(0) && destination == asset)) revert InvalidAddress();
         if (amount == 0) revert NothingToWithdraw();
         uint256 available = claimable[msg.sender];
         if (amount > available) revert InsufficientClaimable();
+        uint256 accountedBefore = accountedBalance();
+        uint256 actualBefore = _assetBalance();
+        if (actualBefore < accountedBefore) revert InsolventAsset(actualBefore, accountedBefore);
 
         claimable[msg.sender] = available - amount;
         totalClaimable -= amount;
         _sendAsset(destination, amount);
+        uint256 accountedAfter = accountedBefore - amount;
+        uint256 actualAfter = _assetBalance();
+        if (actualAfter < accountedAfter) revert InsolventAsset(actualAfter, accountedAfter);
 
         emit Withdrawal(msg.sender, destination, amount);
     }
@@ -228,11 +264,12 @@ abstract contract ProofBountyEscrowBase is IProofBountyEscrow, EIP712, Reentranc
         return _computeCommitment(bountyId, solver, resultDigest, salt);
     }
 
-    function attestationDigest(Claim calldata result) external view returns (bytes32) {
+    function attestationDigest(Claim calldata result, uint8 signerBitmap) external view returns (bytes32) {
         Bounty storage bounty = bounties[result.bountyId];
         if (bounty.status == BountyStatus.None) revert InvalidBounty();
+        if (!_isValidSignerBitmap(signerBitmap)) revert InvalidSignerBitmap();
         bytes32 commitment_ = _computeCommitment(result.bountyId, result.solver, result.resultDigest, result.salt);
-        return _attestationDigest(result, bounty, commitment_);
+        return _attestationDigest(result, bounty, commitment_, signerBitmap);
     }
 
     function minimumVerifierFee(uint256 reward) public pure returns (uint256) {
@@ -300,7 +337,7 @@ abstract contract ProofBountyEscrowBase is IProofBountyEscrow, EIP712, Reentranc
     {
         if (
             sponsor == address(0) || request.refundRecipient == address(0) || request.refundRecipient == address(this)
-                || request.reward < MIN_REWARD_UNITS
+                || (asset != address(0) && request.refundRecipient == asset) || request.reward < MIN_REWARD_UNITS
         ) {
             revert InvalidBounty();
         }
@@ -359,29 +396,36 @@ abstract contract ProofBountyEscrowBase is IProofBountyEscrow, EIP712, Reentranc
         return keccak256(abi.encode(COMMITMENT_TYPEHASH, deploymentId, bountyId, solver, resultDigest, salt));
     }
 
-    function _attestationDigest(Claim calldata result, Bounty storage bounty, bytes32 commitment_)
+    function _attestationDigest(Claim calldata result, Bounty storage bounty, bytes32 commitment_, uint8 signerBitmap)
         internal
         view
         returns (bytes32)
     {
-        bytes32 structHash = keccak256(
-            abi.encode(
-                ATTESTATION_TYPEHASH,
-                deploymentId,
-                result.bountyId,
-                result.solver,
-                commitment_,
-                result.resultDigest,
-                bounty.reward,
-                bounty.verifierFee,
-                bounty.profileId,
-                bounty.specificationHash,
-                bounty.termsHash,
-                verifierSetHash,
-                bounty.claimDeadline
-            )
-        );
+        AcceptedResultData memory data;
+        data.deploymentId = deploymentId;
+        data.bountyId = result.bountyId;
+        data.solver = result.solver;
+        data.commitment = commitment_;
+        data.resultDigest = result.resultDigest;
+        data.reward = bounty.reward;
+        data.verifierFee = bounty.verifierFee;
+        data.profileId = bounty.profileId;
+        data.specificationHash = bounty.specificationHash;
+        data.termsHash = bounty.termsHash;
+        data.verifierSetHash = verifierSetHash;
+        data.signerBitmap = signerBitmap;
+        data.claimDeadline = bounty.claimDeadline;
+        bytes32 structHash = keccak256(abi.encode(ATTESTATION_TYPEHASH, data));
         return _hashTypedDataV4(structHash);
+    }
+
+    function _signerBitmap(uint8 firstIndex, uint8 secondIndex) internal pure returns (uint8 bitmap) {
+        if (firstIndex >= secondIndex || secondIndex >= VERIFIER_COUNT) revert InvalidVerifierOrder();
+        bitmap = uint8((uint256(1) << firstIndex) | (uint256(1) << secondIndex));
+    }
+
+    function _isValidSignerBitmap(uint8 bitmap) internal pure returns (bool) {
+        return bitmap == 3 || bitmap == 5 || bitmap == 6;
     }
 
     function _assetBalance() internal view virtual returns (uint256);

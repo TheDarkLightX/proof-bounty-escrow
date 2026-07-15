@@ -58,6 +58,33 @@ A relayer can submit a claim without becoming the solver, which can hide who pai
 
 Verifier addresses are intentionally public and fixed. Their signatures are public after settlement. Operational signing infrastructure should avoid leaking unrelated metadata, but it cannot hide verifier participation in a paid bounty.
 
+### 5.1 Launch-role separation
+
+Use different keys and custody policies for every public role:
+
+- a dedicated, minimally funded deployment signer that is retired after the release observation;
+- a DevCo payout Safe or other tested treasury that is not the deployer or a personal holdings wallet;
+- a separately governed security-reserve Safe with different spending policy;
+- three independently generated verifier keys on separate devices or under separate operators;
+- a low-value relayer/monitor with no authority; and
+- separate source-release, frontend-publishing, and infrastructure credentials.
+
+Role separation limits blast radius; it does not create anonymity. The creation transaction,
+funding route, timing, signer attestations, and withdrawals remain public and can link these roles.
+Do not fund a dedicated deployer directly from a wallet whose relationship you intend to conceal.
+No script can guarantee wallet privacy against chain analysis, RPC logs, browser telemetry, or
+operational reuse. Never place a private key, mnemonic, keystore password, RPC credential, or
+personal wallet address in a committed environment file or release artifact.
+
+The deployment wrapper improves compartmentalization, not anonymity. It treats `.env` as strict
+data instead of executable shell, refuses secret-looking fields and an account alias, removes
+ambient Foundry/wallet variables from child processes, and does not print the RPC endpoint or
+keystore alias. It still sends the dedicated deployer address and RPC requests to the configured
+provider; the creation transaction, nonce, predicted address, and final contract address are
+public. A local administrator may also inspect process arguments or environments. Protect the
+host, keep `.env` uncommitted with restrictive filesystem permissions, use a dedicated RPC account
+where possible, and delete local operational material according to a reviewed retention policy.
+
 ## 6. Frontend and infrastructure metadata
 
 The repository includes a static frontend that can be built and hosted on IPFS because contract
@@ -74,6 +101,10 @@ An IPFS deployment can still depend on:
 - indexers and analytics;
 - source repositories and release channels; and
 - browser storage, IP addresses, and telemetry.
+
+Using an encrypted Foundry keystore avoids placing a raw key in the repository or command line,
+but the public deployer address and the keystore alias are identifiers, not privacy mechanisms. A
+hardware wallet protects key extraction; it does not hide the funding graph or transaction sender.
 
 For a privacy-conscious client, use multiple independently operated gateways and RPCs, avoid
 analytics, make builds reproducible, publish hashes through independent channels, minimize logs,

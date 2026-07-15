@@ -48,6 +48,7 @@ class Bounty:
     winner: int = -1
     result: int = 0
     verifier_pair: tuple[int, int] = (-1, -1)
+    signed_verifier_pair: tuple[int, int] = (-1, -1)
     settlement_count: int = 0
 
 
@@ -157,13 +158,22 @@ def commit(state: State, solver: int, result: int, mutation: str | None) -> Stat
     return replace(state, bounty=replace(state.bounty, commitments=tuple(commitments)))
 
 
-def claim(state: State, solver: int, result: int, pair: tuple[int, int], mutation: str | None) -> State:
+def claim(
+    state: State,
+    solver: int,
+    result: int,
+    pair: tuple[int, int],
+    signed_pair: tuple[int, int],
+    mutation: str | None,
+) -> State:
     allowed_status = state.bounty.status == OPEN or (
         mutation == "allow_double_settlement" and state.bounty.status in (PAID, REFUNDED)
     )
     if not allowed_status or not claim_enabled(state.now, mutation):
         return state
     if mutation != "ignore_commitment" and state.bounty.commitments[solver] != result:
+        return state
+    if mutation != "ignore_signed_verifier_pair" and pair != signed_pair:
         return state
 
     bounty = state.bounty
@@ -197,6 +207,7 @@ def claim(state: State, solver: int, result: int, pair: tuple[int, int], mutatio
             winner=solver,
             result=result,
             verifier_pair=pair,
+            signed_verifier_pair=signed_pair,
             settlement_count=bounty.settlement_count + 1,
         ),
         credits=credits,
@@ -219,6 +230,7 @@ def refund(state: State, mutation: str | None) -> State:
             winner=-1,
             result=0,
             verifier_pair=(-1, -1),
+            signed_verifier_pair=(-1, -1),
             settlement_count=state.bounty.settlement_count + 1,
         ),
         credits=_add(state.credits, REFUND, amount),
@@ -283,6 +295,8 @@ def check_properties(state: State, mutation: str | None = None) -> None:
             raise AssertionError(("paid result shape", state))
         if bounty.commitments[bounty.winner] != bounty.result:
             raise AssertionError(("commitment binding", state))
+        if bounty.verifier_pair != bounty.signed_verifier_pair:
+            raise AssertionError(("signed verifier pair binding", state))
         if entitlement(state, SOLVER_0 + bounty.winner) != bounty.reward:
             raise AssertionError(("full advertised reward", state))
         dev_fee, verifier_fee, security_fee = fees(bounty.reward, bounty.verifier_fee)
@@ -301,7 +315,13 @@ def check_properties(state: State, mutation: str | None = None) -> None:
         if entitlement(state, REFUND) != bounty.funded:
             raise AssertionError(("complete no-fee refund", state))
     elif bounty.status in (NONE, OPEN):
-        if bounty.winner != -1 or bounty.result != 0 or bounty.settlement_count != 0:
+        if (
+            bounty.winner != -1
+            or bounty.result != 0
+            or bounty.verifier_pair != (-1, -1)
+            or bounty.signed_verifier_pair != (-1, -1)
+            or bounty.settlement_count != 0
+        ):
             raise AssertionError(("preterminal shape", state))
 
 
@@ -319,7 +339,13 @@ def successors(state: State, mutation: str | None = None) -> Iterable[tuple[str,
         for result in RESULTS:
             actions.append((f"commit({solver},{result})", commit(state, solver, result, mutation)))
             for pair in VERIFIER_PAIRS:
-                actions.append((f"claim({solver},{result},{pair})", claim(state, solver, result, pair, mutation)))
+                for signed_pair in VERIFIER_PAIRS:
+                    actions.append(
+                        (
+                            f"claim({solver},{result},{pair},signed={signed_pair})",
+                            claim(state, solver, result, pair, signed_pair, mutation),
+                        )
+                    )
     actions.append(("refund", refund(state, mutation)))
     for role in range(ROLE_COUNT):
         actions.append((f"withdraw({role})", withdraw(state, role)))

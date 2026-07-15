@@ -272,6 +272,7 @@ export const acceptedResultTypes = {
     { name: "specificationHash", type: "bytes32" },
     { name: "termsHash", type: "bytes32" },
     { name: "verifierSetHash", type: "bytes32" },
+    { name: "signerBitmap", type: "uint8" },
     { name: "claimDeadline", type: "uint64" },
   ],
 } as const;

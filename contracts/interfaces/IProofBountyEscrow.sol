@@ -68,6 +68,17 @@ interface IProofBountyEscrow {
     event BountyPaid(
         uint256 indexed bountyId, address indexed solver, bytes32 indexed commitment, bytes32 resultDigest
     );
+    event SettlementRecorded(
+        uint256 indexed bountyId,
+        bytes32 indexed attestationDigest,
+        uint8 signerBitmap,
+        address verifierA,
+        address verifierB,
+        uint256 solverReward,
+        uint256 devFee,
+        uint256 verifierShare,
+        uint256 securityCredit
+    );
     event BountyRefunded(uint256 indexed bountyId, address indexed refundRecipient, uint256 amount);
     event Withdrawal(address indexed account, address indexed destination, uint256 amount);
 
@@ -81,7 +92,7 @@ interface IProofBountyEscrow {
         view
         returns (bytes32);
 
-    function attestationDigest(Claim calldata result) external view returns (bytes32);
+    function attestationDigest(Claim calldata result, uint8 signerBitmap) external view returns (bytes32);
     function minimumVerifierFee(uint256 reward) external view returns (uint256);
     function maximumVerifierFee(uint256 reward) external view returns (uint256);
     function requiredFunding(uint256 reward, uint256 verifierFee) external view returns (uint256);

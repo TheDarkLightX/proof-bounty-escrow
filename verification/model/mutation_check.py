@@ -21,6 +21,7 @@ MUTATIONS = (
     "accept_above_max_verifier_fee",
     "accept_reward_below_minimum",
     "ignore_declared_verifier_fee",
+    "ignore_signed_verifier_pair",
 )
 
 

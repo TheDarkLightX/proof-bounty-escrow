@@ -115,7 +115,11 @@ percentage of reward. The contract bounds but does not determine an economically
 Profiles should state expected verification effort and a recommended pool. Percentage-derived
 components round down independently in the asset's smallest unit.
 
-Native creation must send exactly `funded` as `msg.value`. Ordinary native transfers to `receive` or `fallback` revert. The ERC-20 adapter transfers exactly `funded` with `SafeERC20` and verifies that its balance increased by exactly that amount before recording the bounty.
+Native creation must send exactly `funded` as `msg.value`. Ordinary native transfers to `receive`
+or `fallback` revert. The ERC-20 adapter first requires the existing balance to cover every
+existing liability, transfers exactly `funded` with `SafeERC20`, and verifies both the exact
+balance increase and post-deposit backing before recording the bounty. New sponsor funds cannot
+be accepted into an already insolvent token escrow.
 
 ## 4. Commit phase
 
@@ -199,12 +203,16 @@ AcceptedResult(
   bytes32 specificationHash,
   bytes32 termsHash,
   bytes32 verifierSetHash,
+  uint8 signerBitmap,
   uint64 claimDeadline
 )
 ```
 
 The salt is bound transitively through `commitment`. The profile, specification, terms, verifier
-set, deployment, solver, result, reward, verifier pool, bounty, and deadline are all signed.
+set, deployment, solver, result, reward, verifier pool, bounty, exact paid verifier pair, and
+deadline are all signed. `signerBitmap` must have exactly two of its low three bits set: `3`, `5`,
+or `6`. The contract derives the bitmap from the strictly ordered submitted indices; a relayer or
+third verifier therefore cannot substitute a different signer pair to redirect a verifier share.
 
 The contract does not prove that a verifier actually ran an evaluator. A signature means only that the corresponding verifier key accepted this exact typed record. Verifier software must independently fetch the frozen content, reproduce the declared evaluator, verify the stored solver commitment, and enforce its signing policy.
 
@@ -218,6 +226,11 @@ Settlement creates pull-payment credits:
 - DevCo: `devFee`;
 - each of the two actual signing verifiers: `floor(verifierFee / 2)`; and
 - security reserve: `securityFee + verifierFee mod 2`.
+
+`BountyPaid` records the solver, commitment, and result digest. `SettlementRecorded` additionally
+records the attestation digest, signer bitmap and addresses, solver reward, DevCo fee, each
+verifier share, and security credit. Logs are not settlement authority, but together these events
+form a deterministic value-allocation receipt without requiring historical calldata decoding.
 
 No asset transfer occurs during claim. Losing solvers' commitments may remain in storage but have no effect after settlement.
 
@@ -237,11 +250,16 @@ withdraw(address destination, uint256 amount)
 
 The caller chooses a nonzero destination other than the escrow itself and any positive amount no
 greater than its credit. Effects are applied before the adapter sends assets, and the function is
-non-reentrant. A failed transfer reverts the entire withdrawal, restoring the credit.
+non-reentrant. The escrow requires full liability backing before and after the transfer. A failed
+transfer or insolvency check reverts the entire withdrawal, restoring the credit.
 
 The ERC-20 adapter additionally checks exact decreases and increases in the escrow and destination
 balances. This excludes fee-on-transfer and other non-exact behavior from the supported token
 profile.
+
+For an ERC-20 deployment, the token contract itself is not a valid DevCo, security-reserve,
+solver, refund-recipient, or withdrawal-destination address. This prevents pull credits from being
+silently assigned to an asset contract that has no recovery path.
 
 Global accounting is:
 

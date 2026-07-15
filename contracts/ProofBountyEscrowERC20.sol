@@ -28,10 +28,15 @@ contract ProofBountyEscrowERC20 is ProofBountyEscrowBase {
 
     function createBounty(BountyRequest calldata request) external nonReentrant returns (uint256 bountyId) {
         uint256 expected = requiredFunding(request.reward, request.verifierFee);
+        uint256 accountedBefore = accountedBalance();
         uint256 beforeBalance = token.balanceOf(address(this));
+        if (beforeBalance < accountedBefore) revert InsolventAsset(beforeBalance, accountedBefore);
         token.safeTransferFrom(msg.sender, address(this), expected);
         uint256 afterBalance = token.balanceOf(address(this));
-        if (afterBalance < beforeBalance || afterBalance - beforeBalance != expected) {
+        if (
+            afterBalance < beforeBalance || afterBalance - beforeBalance != expected
+                || afterBalance < accountedBefore + expected
+        ) {
             revert UnsupportedTokenBehavior();
         }
         return _createBounty(msg.sender, request, expected);

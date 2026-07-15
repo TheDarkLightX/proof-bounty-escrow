@@ -24,7 +24,7 @@ seed = "0x50524f4f46424f554e5459"
 [invariant]
 runs = 1000
 depth = 100
-fail_on_revert = false
+fail_on_revert = true
 call_override = false
 shrink_run_limit = 10000
 

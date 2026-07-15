@@ -3,8 +3,9 @@
   "$id": "https://proof-bounty.invalid/schemas/evm-networks-v1.json",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "compiler", "evmVersion", "networks"],
+  "required": ["$schema", "schemaVersion", "compiler", "evmVersion", "networks"],
   "properties": {
+    "$schema": { "const": "./networks.schema.json" },
     "schemaVersion": { "const": 1 },
     "compiler": { "const": "0.8.36" },
     "evmVersion": { "const": "paris" },

@@ -30,6 +30,7 @@ import {
   hashExactBytes,
   hashExactText,
   normalizeManifest,
+  parseSolverRecoveryPackage,
   randomSalt,
   requireAddress,
   requireNonzeroBytes32,
@@ -39,7 +40,7 @@ import {
   shortHex,
   suggestedVerifierFee,
 } from "./lib";
-import type { AppConfig, BountyView, ClaimPackage, DeploymentChoice } from "./types";
+import type { AppConfig, BountyView, DeploymentChoice, SolverRecoveryPackage } from "./types";
 import "./styles.css";
 
 const root = document.querySelector<HTMLDivElement>("#app");
@@ -295,7 +296,7 @@ let walletClient: WalletClient | undefined;
 let account: Address | undefined;
 let assetAddress: Address = ZERO_ADDRESS;
 let currentCredit = 0n;
-let computedClaimPackage: ClaimPackage | undefined;
+let computedClaimPackage: SolverRecoveryPackage | undefined;
 let preparedAttestation: unknown;
 let deploymentChoices: DeploymentChoice[] = [];
 let selectedExpectation: DeploymentChoice["expected"] | undefined;
@@ -1117,7 +1118,7 @@ function commitInputs(): { bountyId: bigint; resultDigest: Hex; salt: Hex } {
   };
 }
 
-async function computeSolverCommitment(): Promise<ClaimPackage> {
+async function computeSolverCommitment(): Promise<SolverRecoveryPackage> {
   const target = requireActiveTarget();
   const wallet = await requestWallet(false);
   const values = commitInputs();
@@ -1129,13 +1130,16 @@ async function computeSolverCommitment(): Promise<ClaimPackage> {
     values.salt,
   );
   computedClaimPackage = {
-    schemaVersion: 1,
+    schema: "proof-bounty-solver-recovery/v1",
     chainId: config.chainId,
-    contractAddress: config.contractAddress,
-    bountyId: values.bountyId.toString(),
-    solver: wallet.account,
-    resultDigest: values.resultDigest,
-    salt: values.salt,
+    escrow: config.contractAddress,
+    deploymentId: target.deploymentId,
+    claim: {
+      bountyId: values.bountyId.toString(),
+      solver: wallet.account,
+      resultDigest: values.resultDigest,
+      salt: values.salt,
+    },
     commitment,
   };
   setText("computed-commitment", commitment);
@@ -1154,13 +1158,16 @@ async function submitCommitment(): Promise<void> {
     values.salt,
   );
   computedClaimPackage = {
-    schemaVersion: 1,
+    schema: "proof-bounty-solver-recovery/v1",
     chainId: context.target.config.chainId,
-    contractAddress: context.target.config.contractAddress,
-    bountyId: values.bountyId.toString(),
-    solver: context.account,
-    resultDigest: values.resultDigest,
-    salt: values.salt,
+    escrow: context.target.config.contractAddress,
+    deploymentId: context.target.deploymentId,
+    claim: {
+      bountyId: values.bountyId.toString(),
+      solver: context.account,
+      resultDigest: values.resultDigest,
+      salt: values.salt,
+    },
     commitment,
   };
   setText("computed-commitment", commitment);
@@ -1185,10 +1192,27 @@ function claimValues(): { bountyId: bigint; solver: Address; resultDigest: Hex; 
   };
 }
 
+function selectedVerifierPair(): readonly [number, number] {
+  const firstIndex = Number(input("verifier-index-a").value.trim());
+  const secondIndex = Number(input("verifier-index-b").value.trim());
+  if (![firstIndex, secondIndex].every((value) => Number.isInteger(value) && value >= 0 && value <= 2)) {
+    throw new Error("Verifier indices must be integers 0, 1, or 2.");
+  }
+  if (firstIndex >= secondIndex) {
+    throw new Error("Verifier A index must be lower than verifier B index so signatures match the signed pair.");
+  }
+  return [firstIndex, secondIndex];
+}
+
+function signerBitmap(pair: readonly [number, number]): number {
+  return (1 << pair[0]) | (1 << pair[1]);
+}
+
 async function prepareAttestation(): Promise<unknown> {
   const client = requireClient();
   const target = requireActiveTarget();
   const result = claimValues();
+  const verifierPair = selectedVerifierPair();
   const { bounty, commitment, block } = await readClaimReadiness(client, target, result);
   const domain = {
     name: target.config.protocolName,
@@ -1208,6 +1232,7 @@ async function prepareAttestation(): Promise<unknown> {
     specificationHash: bounty.specificationHash,
     termsHash: bounty.termsHash,
     verifierSetHash: target.verifierSetHash,
+    signerBitmap: signerBitmap(verifierPair),
     claimDeadline: bounty.claimDeadline,
   } as const;
   const digest = hashTypedData({ domain, types: acceptedResultTypes, primaryType: "AcceptedResult", message });
@@ -1228,8 +1253,9 @@ async function prepareAttestation(): Promise<unknown> {
       commitment,
       reward: bounty.reward,
       verifierFee: bounty.verifierFee,
+      paidVerifierIndices: verifierPair,
     },
-    observedBlock: { number: block.number, timestamp: block.timestamp },
+    observedBlock: { number: block.number, hash: block.hash, timestamp: block.timestamp, finality: "finalized" },
     warning: "Sign this exact EIP-712 payload. Do not use personal_sign. Independently replay the frozen evaluator before signing.",
   };
   setText("attestation-digest", digest);
@@ -1241,8 +1267,16 @@ async function readClaimReadiness(
   client: PublicClient,
   target: VerifiedTarget,
   result: { bountyId: bigint; solver: Address; resultDigest: Hex; salt: Hex },
-): Promise<{ bounty: BountyView; commitment: Hex; block: { number: bigint; timestamp: bigint } }> {
-  const block = await client.getBlock({ blockTag: "latest" });
+): Promise<{ bounty: BountyView; commitment: Hex; block: { number: bigint; timestamp: bigint; hash: Hex } }> {
+  let block;
+  try {
+    block = await client.getBlock({ blockTag: "finalized" });
+  } catch {
+    throw new Error(
+      "This RPC does not expose a finalized block. Verifier payload preparation fails closed; use a finality-aware RPC.",
+    );
+  }
+  if (!block.hash) throw new Error("Finalized block response did not include a block hash.");
   const [bounty, storedCommitment] = await Promise.all([
     readBounty(result.bountyId, client, block.number),
     client.readContract({
@@ -1268,21 +1302,16 @@ async function readClaimReadiness(
     storedCommitment,
     commitment,
   );
-  return { bounty, commitment, block: { number: block.number, timestamp: block.timestamp } };
+  return { bounty, commitment, block: { number: block.number, timestamp: block.timestamp, hash: block.hash } };
 }
 
 async function relayClaim(): Promise<void> {
   const result = claimValues();
-  const firstIndex = Number(input("verifier-index-a").value.trim());
-  const secondIndex = Number(input("verifier-index-b").value.trim());
-  if (![firstIndex, secondIndex].every((value) => Number.isInteger(value) && value >= 0 && value <= 2)) {
-    throw new Error("Verifier indices must be integers 0, 1, or 2.");
-  }
+  const [firstIndex, secondIndex] = selectedVerifierPair();
   const signatures = [
     { verifierIndex: firstIndex, signature: requireSignature(input("signature-a").value.trim(), "Signature A") },
     { verifierIndex: secondIndex, signature: requireSignature(input("signature-b").value.trim(), "Signature B") },
   ].sort((left, right) => left.verifierIndex - right.verifierIndex);
-  if (signatures[0]?.verifierIndex === signatures[1]?.verifierIndex) throw new Error("Verifier signatures must have distinct indices.");
   const context = await requestWriteContext();
   await readClaimReadiness(context.client, context.target, result);
   const ordered = [signatures[0]!, signatures[1]!] as const;
@@ -1381,14 +1410,17 @@ async function importManifestFile(file: File): Promise<void> {
 }
 
 async function importClaimPackage(file: File): Promise<void> {
-  const parsed = JSON.parse(await file.text()) as Partial<ClaimPackage>;
-  if (parsed.schemaVersion !== 1 || parsed.chainId !== config.chainId || parsed.contractAddress?.toLowerCase() !== config.contractAddress.toLowerCase()) {
-    throw new Error("Recovery package does not match this chain and escrow deployment.");
-  }
-  input("claim-bounty-id").value = String(parsed.bountyId ?? "");
-  input("claim-solver").value = String(parsed.solver ?? "");
-  input("claim-result-digest").value = String(parsed.resultDigest ?? "");
-  input("claim-salt").value = String(parsed.salt ?? "");
+  const target = requireActiveTarget();
+  const parsed = parseSolverRecoveryPackage(
+    JSON.parse(await file.text()) as unknown,
+    target.config.chainId,
+    target.config.contractAddress,
+    target.deploymentId,
+  );
+  input("claim-bounty-id").value = parsed.claim.bountyId;
+  input("claim-solver").value = parsed.claim.solver;
+  input("claim-result-digest").value = parsed.claim.resultDigest;
+  input("claim-salt").value = parsed.claim.salt;
   await prepareAttestation();
 }
 
@@ -1484,7 +1516,7 @@ function wireEvents(): void {
   }));
   element("download-claim-package").addEventListener("click", () => {
     if (!computedClaimPackage) return;
-    downloadJson(`bounty-${computedClaimPackage.bountyId}-solver-recovery.json`, computedClaimPackage);
+    downloadJson(`bounty-${computedClaimPackage.claim.bountyId}-solver-recovery.json`, computedClaimPackage);
   });
   element("commit-form").addEventListener("submit", (event) => {
     event.preventDefault();

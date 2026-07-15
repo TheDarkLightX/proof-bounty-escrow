@@ -192,7 +192,8 @@ contract NativeEscrowHandler is Test {
         uint8 pair = rawPair % 3;
         uint8 first = pair == 2 ? 1 : 0;
         uint8 second = pair == 0 ? 1 : 2;
-        bytes32 digest = escrow.attestationDigest(result);
+        uint8 signerBitmap = uint8((uint256(1) << first) | (uint256(1) << second));
+        bytes32 digest = escrow.attestationDigest(result, signerBitmap);
         signatures[0] = _sign(first, verifierKeys[first], digest);
         signatures[1] = _sign(second, verifierKeys[second], digest);
     }
@@ -218,6 +219,16 @@ contract ProofBountyEscrowInvariantTest is StdInvariant, Test {
         escrow = new ProofBountyEscrowNative("Proof Bounty Escrow", devCo, reserve, verifiers);
         handler = new NativeEscrowHandler(escrow, keys);
         targetContract(address(handler));
+        bytes4[] memory selectors = new bytes4[](8);
+        selectors[0] = NativeEscrowHandler.createBounty.selector;
+        selectors[1] = NativeEscrowHandler.commitResult.selector;
+        selectors[2] = NativeEscrowHandler.advanceTime.selector;
+        selectors[3] = NativeEscrowHandler.claimResult.selector;
+        selectors[4] = NativeEscrowHandler.refundBounty.selector;
+        selectors[5] = NativeEscrowHandler.withdrawCredit.selector;
+        selectors[6] = NativeEscrowHandler.forceNative.selector;
+        selectors[7] = NativeEscrowHandler.attemptTerminalSettlement.selector;
+        targetSelector(FuzzSelector({addr: address(handler), selectors: selectors}));
     }
 
     function invariant_SolvencyAndSurplusIdentityAlwaysHold() public view {
