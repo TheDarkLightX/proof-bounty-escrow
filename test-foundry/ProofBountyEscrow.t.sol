@@ -11,6 +11,21 @@ import {FeeOnTransferERC20} from "../contracts/mocks/FeeOnTransferERC20.sol";
 import {RevertingReceiver} from "../contracts/mocks/RevertingReceiver.sol";
 
 contract ProofBountyEscrowTest is Test {
+    event BountyPaid(
+        uint256 indexed bountyId, address indexed solver, bytes32 indexed commitment, bytes32 resultDigest
+    );
+    event SettlementRecorded(
+        uint256 indexed bountyId,
+        bytes32 indexed attestationDigest,
+        uint8 signerBitmap,
+        address verifierA,
+        address verifierB,
+        uint256 solverReward,
+        uint256 devFee,
+        uint256 verifierShare,
+        uint256 securityCredit
+    );
+
     string internal constant NAME = "Proof Bounty Escrow";
     uint256 internal constant REWARD = 100 ether;
     uint64 internal constant COMMIT_WINDOW = 1 days;
@@ -64,11 +79,11 @@ contract ProofBountyEscrowTest is Test {
         }
     }
 
-    function test_AttestationTypehashExplicitlyBindsRewardAndVerifierFee() public view {
+    function test_AttestationTypehashBindsEconomicsAndPaidVerifierPair() public view {
         assertEq(
             nativeEscrow.ATTESTATION_TYPEHASH(),
             keccak256(
-                "AcceptedResult(bytes32 deploymentId,uint256 bountyId,address solver,bytes32 commitment,bytes32 resultDigest,uint256 reward,uint256 verifierFee,bytes32 profileId,bytes32 specificationHash,bytes32 termsHash,bytes32 verifierSetHash,uint64 claimDeadline)"
+                "AcceptedResult(bytes32 deploymentId,uint256 bountyId,address solver,bytes32 commitment,bytes32 resultDigest,uint256 reward,uint256 verifierFee,bytes32 profileId,bytes32 specificationHash,bytes32 termsHash,bytes32 verifierSetHash,uint8 signerBitmap,uint64 claimDeadline)"
             )
         );
     }
@@ -101,6 +116,7 @@ contract ProofBountyEscrowTest is Test {
                 bounty.specificationHash,
                 bounty.termsHash,
                 nativeEscrow.verifierSetHash(),
+                uint8(3),
                 bounty.claimDeadline
             )
         );
@@ -115,7 +131,7 @@ contract ProofBountyEscrowTest is Test {
         );
         bytes32 expected = keccak256(abi.encodePacked(hex"1901", domainSeparator, structHash));
 
-        assertEq(nativeEscrow.attestationDigest(result), expected);
+        assertEq(nativeEscrow.attestationDigest(result, 3), expected);
     }
 
     function test_ConstructorRejectsInvalidAuthoritiesAndProtocolName() public {
@@ -130,6 +146,12 @@ contract ProofBountyEscrowTest is Test {
 
         vm.expectRevert(ProofBountyEscrowBase.InvalidAddress.selector);
         new ProofBountyEscrowNative(NAME, devCo, devCo, verifiers);
+
+        vm.expectRevert(ProofBountyEscrowBase.InvalidAddress.selector);
+        new ProofBountyEscrowERC20(NAME, token, address(token), securityReserve, verifiers);
+
+        vm.expectRevert(ProofBountyEscrowBase.InvalidAddress.selector);
+        new ProofBountyEscrowERC20(NAME, token, devCo, address(token), verifiers);
 
         address predicted = vm.computeCreateAddress(address(this), vm.getNonce(address(this)));
         vm.expectRevert(ProofBountyEscrowBase.InvalidAddress.selector);
@@ -202,6 +224,12 @@ contract ProofBountyEscrowTest is Test {
         vm.prank(sponsor);
         vm.expectRevert(ProofBountyEscrowBase.InvalidBounty.selector);
         nativeEscrow.createBounty{value: funding}(request);
+
+        request = _request(REWARD);
+        request.refundRecipient = address(token);
+        vm.prank(sponsor);
+        vm.expectRevert(ProofBountyEscrowBase.InvalidBounty.selector);
+        tokenEscrow.createBounty(request);
 
         request = _request(REWARD);
         request.termsHash = bytes32(0);
@@ -370,6 +398,7 @@ contract ProofBountyEscrowTest is Test {
         vm.warp(beforeBounty.commitDeadline);
 
         IProofBountyEscrow.VerifierSignature[2] memory signatures = _signatures(nativeEscrow, result);
+        _expectSettlementEvents(result, beforeBounty);
         vm.prank(relayer);
         nativeEscrow.claim(result, signatures);
 
@@ -401,6 +430,43 @@ contract ProofBountyEscrowTest is Test {
         nativeEscrow.claim(result, signatures);
         vm.expectRevert(ProofBountyEscrowBase.BountyNotOpen.selector);
         nativeEscrow.refund(bountyId);
+    }
+
+    function test_SignedVerifierPairCannotBeSubstitutedToRedirectFees() public {
+        uint256 bountyId = _createNative(REWARD);
+        IProofBountyEscrow.Claim memory result = _commitResult(nativeEscrow, bountyId, solver, "pair-bound");
+
+        bytes32 pair01Digest = nativeEscrow.attestationDigest(result, 3);
+        bytes32 pair02Digest = nativeEscrow.attestationDigest(result, 5);
+        assertNotEq(pair01Digest, pair02Digest);
+
+        IProofBountyEscrow.VerifierSignature[2] memory substituted;
+        substituted[0] = _sign(0, verifierKeys[0], pair01Digest);
+        substituted[1] = _sign(2, verifierKeys[2], pair02Digest);
+
+        vm.warp(nativeEscrow.getBounty(bountyId).commitDeadline);
+        vm.expectRevert(ProofBountyEscrowBase.InvalidVerifierSignature.selector);
+        nativeEscrow.claim(result, substituted);
+
+        assertEq(nativeEscrow.claimable(verifiers[2]), 0);
+        assertEq(uint8(nativeEscrow.getBounty(bountyId).status), uint8(IProofBountyEscrow.BountyStatus.Open));
+
+        IProofBountyEscrow.VerifierSignature[2] memory authorized;
+        authorized[0] = _sign(0, verifierKeys[0], pair01Digest);
+        authorized[1] = _sign(1, verifierKeys[1], pair01Digest);
+        nativeEscrow.claim(result, authorized);
+
+        assertGt(nativeEscrow.claimable(verifiers[0]), 0);
+        assertEq(nativeEscrow.claimable(verifiers[0]), nativeEscrow.claimable(verifiers[1]));
+        assertEq(nativeEscrow.claimable(verifiers[2]), 0);
+    }
+
+    function test_AttestationDigestRejectsNonThresholdBitmap() public {
+        uint256 bountyId = _createNative(REWARD);
+        IProofBountyEscrow.Claim memory result = _commitResult(nativeEscrow, bountyId, solver, "bad-bitmap");
+
+        vm.expectRevert(ProofBountyEscrowBase.InvalidSignerBitmap.selector);
+        nativeEscrow.attestationDigest(result, 7);
     }
 
     function test_FirstValidClaimWinsAmongMultipleSolvers() public {
@@ -484,7 +550,7 @@ contract ProofBountyEscrowTest is Test {
         nativeEscrow.claim(mutated, mutatedSignatures);
 
         IProofBountyEscrow.VerifierSignature[2] memory wrongKey = _signatures(nativeEscrow, first);
-        wrongKey[0] = _sign(0, verifierKeys[2], nativeEscrow.attestationDigest(first));
+        wrongKey[0] = _sign(0, verifierKeys[2], nativeEscrow.attestationDigest(first, 3));
         vm.expectRevert(ProofBountyEscrowBase.InvalidVerifierSignature.selector);
         nativeEscrow.claim(first, wrongKey);
     }
@@ -564,6 +630,39 @@ contract ProofBountyEscrowTest is Test {
         vm.warp(tokenEscrow.getBounty(refundId).claimDeadline);
         tokenEscrow.refund(refundId);
         assertEq(tokenEscrow.claimable(refundRecipient), refundAmount);
+    }
+
+    function test_ERC20WithdrawalRejectsAssetContractAsDestination() public {
+        uint256 bountyId = _createToken(REWARD);
+        uint256 funded = tokenEscrow.getBounty(bountyId).fundedAmount;
+        vm.warp(tokenEscrow.getBounty(bountyId).claimDeadline);
+        tokenEscrow.refund(bountyId);
+
+        vm.prank(refundRecipient);
+        vm.expectRevert(ProofBountyEscrowBase.InvalidAddress.selector);
+        tokenEscrow.withdraw(address(token), funded);
+
+        assertEq(tokenEscrow.claimable(refundRecipient), funded);
+        assertEq(tokenEscrow.totalClaimable(), funded);
+    }
+
+    function test_ERC20ClaimRejectsAssetContractAsSolver() public {
+        uint256 bountyId = _createToken(REWARD);
+        IProofBountyEscrow.Claim memory result = IProofBountyEscrow.Claim({
+            bountyId: bountyId,
+            solver: address(token),
+            resultDigest: keccak256("asset-solver-result"),
+            salt: keccak256("asset-solver-salt")
+        });
+        bytes32 commitment = tokenEscrow.computeCommitment(bountyId, address(token), result.resultDigest, result.salt);
+        vm.prank(address(token));
+        tokenEscrow.commit(bountyId, commitment);
+        vm.warp(tokenEscrow.getBounty(bountyId).commitDeadline);
+        IProofBountyEscrow.VerifierSignature[2] memory signatures = _signatures(tokenEscrow, result);
+
+        vm.expectRevert(ProofBountyEscrowBase.InvalidBounty.selector);
+        tokenEscrow.claim(result, signatures);
+        assertEq(tokenEscrow.claimable(address(token)), 0);
     }
 
     function test_ERC20RejectsFeeOnTransferAtFunding() public {
@@ -651,9 +750,32 @@ contract ProofBountyEscrowTest is Test {
         view
         returns (IProofBountyEscrow.VerifierSignature[2] memory signatures)
     {
-        bytes32 digest = escrow.attestationDigest(result);
+        bytes32 digest = escrow.attestationDigest(result, 3);
         signatures[0] = _sign(0, verifierKeys[0], digest);
         signatures[1] = _sign(1, verifierKeys[1], digest);
+    }
+
+    function _expectSettlementEvents(IProofBountyEscrow.Claim memory result, IProofBountyEscrow.Bounty memory bounty)
+        internal
+    {
+        (uint256 devFee, uint256 verifierFee, uint256 securityFee) =
+            nativeEscrow.feeBreakdown(bounty.reward, bounty.verifierFee);
+        bytes32 commitment =
+            nativeEscrow.computeCommitment(result.bountyId, result.solver, result.resultDigest, result.salt);
+        vm.expectEmit(true, true, true, true, address(nativeEscrow));
+        emit BountyPaid(result.bountyId, result.solver, commitment, result.resultDigest);
+        vm.expectEmit(true, true, false, true, address(nativeEscrow));
+        emit SettlementRecorded(
+            result.bountyId,
+            nativeEscrow.attestationDigest(result, 3),
+            3,
+            verifiers[0],
+            verifiers[1],
+            bounty.reward,
+            devFee,
+            verifierFee / 2,
+            securityFee + verifierFee % 2
+        );
     }
 
     function _sign(uint8 index, uint256 privateKey, bytes32 digest)

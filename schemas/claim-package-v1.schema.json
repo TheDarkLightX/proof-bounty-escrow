@@ -13,6 +13,7 @@
     "economics",
     "commitment",
     "attestationDigest",
+    "signerBitmap",
     "result",
     "signatures"
   ],
@@ -44,6 +45,7 @@
     },
     "commitment": { "$ref": "#/$defs/hash" },
     "attestationDigest": { "$ref": "#/$defs/hash" },
+    "signerBitmap": { "type": "integer", "enum": [3, 5, 6] },
     "result": {
       "type": "object",
       "additionalProperties": false,

@@ -9,7 +9,7 @@ import {
   type Address,
   type Hex,
 } from "viem";
-import type { AppConfig, DeploymentChoice, DeploymentManifest } from "./types";
+import type { AppConfig, DeploymentChoice, DeploymentManifest, SolverRecoveryPackage } from "./types";
 
 export const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as Address;
 export const ZERO_HASH = `0x${"0".repeat(64)}` as Hex;
@@ -81,6 +81,57 @@ export function computeSolverCommitment(
   return keccak256(
     encodeAbiParameters(commitmentParameters, [COMMITMENT_TYPEHASH, deploymentId, bountyId, solver, resultDigest, salt]),
   );
+}
+
+export function parseSolverRecoveryPackage(
+  raw: unknown,
+  expectedChainId: number,
+  expectedEscrow: Address,
+  expectedDeploymentId: Hex,
+): SolverRecoveryPackage {
+  if (!isRecord(raw)) throw new Error("Recovery package must be a JSON object.");
+  requireExactKeys(raw, ["schema", "chainId", "escrow", "deploymentId", "claim", "commitment"], "Recovery package");
+  if (raw.schema !== "proof-bounty-solver-recovery/v1") throw new Error("Unsupported recovery-package schema.");
+  if (!Number.isSafeInteger(raw.chainId) || Number(raw.chainId) <= 0) throw new Error("Recovery package has an invalid chain ID.");
+  const chainId = Number(raw.chainId);
+  const escrow = requireAddress(String(raw.escrow ?? ""), "Recovery escrow");
+  const deploymentId = requireNonzeroBytes32(String(raw.deploymentId ?? ""), "Recovery deployment ID");
+  if (!isRecord(raw.claim)) throw new Error("Recovery package is missing its claim object.");
+  requireExactKeys(raw.claim, ["bountyId", "solver", "resultDigest", "salt"], "Recovery claim");
+  if (typeof raw.claim.bountyId !== "string") throw new Error("Recovery bounty ID must use canonical decimal text.");
+  const bountyId = requirePositiveInteger(raw.claim.bountyId, "Recovery bounty ID");
+  if (bountyId.toString() !== raw.claim.bountyId) throw new Error("Recovery bounty ID is not canonical decimal text.");
+  const solver = requireAddress(String(raw.claim.solver ?? ""), "Recovery solver");
+  const resultDigest = requireNonzeroBytes32(String(raw.claim.resultDigest ?? ""), "Recovery result digest");
+  const salt = requireNonzeroBytes32(String(raw.claim.salt ?? ""), "Recovery salt");
+  const commitment = requireNonzeroBytes32(String(raw.commitment ?? ""), "Recovery commitment");
+
+  if (chainId !== expectedChainId || escrow.toLowerCase() !== expectedEscrow.toLowerCase()) {
+    throw new Error("Recovery package does not match this chain and escrow deployment.");
+  }
+  if (deploymentId.toLowerCase() !== expectedDeploymentId.toLowerCase()) {
+    throw new Error("Recovery package does not match this deployment identity.");
+  }
+  const expectedCommitment = computeSolverCommitment(deploymentId, bountyId, solver, resultDigest, salt);
+  if (commitment.toLowerCase() !== expectedCommitment.toLowerCase()) {
+    throw new Error("Recovery package commitment does not match its exact claim fields.");
+  }
+  return {
+    schema: "proof-bounty-solver-recovery/v1",
+    chainId,
+    escrow,
+    deploymentId,
+    claim: { bountyId: bountyId.toString(), solver, resultDigest, salt },
+    commitment,
+  };
+}
+
+function requireExactKeys(value: Record<string, unknown>, expected: string[], label: string): void {
+  const actual = Object.keys(value).sort();
+  const canonical = [...expected].sort();
+  if (actual.length !== canonical.length || actual.some((key, index) => key !== canonical[index])) {
+    throw new Error(`${label} fields do not match the versioned schema.`);
+  }
 }
 
 export function assertAttestationReady(

@@ -29,6 +29,7 @@ class Mutation:
     old: str
     new: str
     occurrence: int = 1
+    source: Path = SOURCE
 
 
 MUTATIONS = (
@@ -69,8 +70,8 @@ MUTATIONS = (
     ),
     Mutation(
         "duplicate_verifier_counts_twice",
-        "if (signatures[0].verifierIndex >= signatures[1].verifierIndex)",
-        "if (signatures[0].verifierIndex > signatures[1].verifierIndex)",
+        "if (firstIndex >= secondIndex || secondIndex >= VERIFIER_COUNT) revert InvalidVerifierOrder();",
+        "if (firstIndex > secondIndex || secondIndex >= VERIFIER_COUNT) revert InvalidVerifierOrder();",
     ),
     Mutation(
         "verifier_can_claim_as_solver",
@@ -116,6 +117,50 @@ MUTATIONS = (
         "accept_reward_below_minimum_units",
         " || request.reward < MIN_REWARD_UNITS",
         " || request.reward == 0",
+    ),
+    Mutation(
+        "allow_asset_as_fee_recipient",
+        "                || (asset_ != address(0) && (devCo_ == asset_ || securityReserve_ == asset_))\n",
+        "",
+    ),
+    Mutation(
+        "allow_asset_as_refund_recipient",
+        " || (asset != address(0) && request.refundRecipient == asset)",
+        "",
+    ),
+    Mutation(
+        "allow_withdrawal_to_asset_contract",
+        "(asset != address(0) && destination == asset)",
+        "false",
+    ),
+    Mutation(
+        "allow_asset_as_solver",
+        " || (asset != address(0) && result.solver == asset)",
+        "",
+    ),
+    Mutation(
+        "omit_signed_verifier_pair_binding",
+        "        data.signerBitmap = signerBitmap;\n",
+        "        data.signerBitmap = 0;\n",
+    ),
+    Mutation(
+        "remove_erc20_solvency_admission_gate",
+        """        uint256 accountedBefore = accountedBalance();
+        uint256 beforeBalance = token.balanceOf(address(this));
+        if (beforeBalance < accountedBefore) revert InsolventAsset(beforeBalance, accountedBefore);
+        token.safeTransferFrom(msg.sender, address(this), expected);
+        uint256 afterBalance = token.balanceOf(address(this));
+        if (
+            afterBalance < beforeBalance || afterBalance - beforeBalance != expected
+                || afterBalance < accountedBefore + expected
+        ) {
+""",
+        """        uint256 beforeBalance = token.balanceOf(address(this));
+        token.safeTransferFrom(msg.sender, address(this), expected);
+        uint256 afterBalance = token.balanceOf(address(this));
+        if (afterBalance < beforeBalance || afterBalance - beforeBalance != expected) {
+""",
+        source=Path("contracts/ProofBountyEscrowERC20.sol"),
     ),
 )
 
@@ -166,7 +211,7 @@ def main() -> int:
             worktree = temp / mutation.name
             worktree.mkdir()
             stage_tree(worktree)
-            apply_mutation(worktree / SOURCE, mutation)
+            apply_mutation(worktree / mutation.source, mutation)
 
             build = run([forge, "build"], worktree)
             if build.returncode != 0:
@@ -191,7 +236,7 @@ def main() -> int:
 
     receipt = {
         "schema": "proof-bounty-solidity-mutation-receipt/v1",
-        "scope": f"{len(MUTATIONS)} targeted semantic mutants in ProofBountyEscrowBase.sol",
+        "scope": f"{len(MUTATIONS)} targeted semantic mutants across the escrow contracts",
         "test_contract_pattern": TEST_PATTERN,
         "mutants": len(results),
         "killed": sum(bool(result["killed"]) for result in results),

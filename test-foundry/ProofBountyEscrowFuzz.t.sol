@@ -129,7 +129,8 @@ contract ProofBountyEscrowFuzzTest is Test {
         escrow.commit(bountyId, commitment);
 
         IProofBountyEscrow.VerifierSignature[2] memory signatures;
-        bytes32 digest = escrow.attestationDigest(result);
+        uint8 signerBitmap = uint8((uint256(1) << firstIndex) | (uint256(1) << secondIndex));
+        bytes32 digest = escrow.attestationDigest(result, signerBitmap);
         signatures[0] = _sign(firstIndex, verifierKeys[firstIndex], digest);
         signatures[1] = _sign(secondIndex, verifierKeys[secondIndex], digest);
         vm.warp(request.commitDeadline);
@@ -209,7 +210,8 @@ contract ProofBountyEscrowFuzzTest is Test {
         view
         returns (IProofBountyEscrow.VerifierSignature[2] memory signatures)
     {
-        bytes32 digest = escrow.attestationDigest(result);
+        uint8 signerBitmap = uint8((uint256(1) << first) | (uint256(1) << second));
+        bytes32 digest = escrow.attestationDigest(result, signerBitmap);
         signatures[0] = _sign(first, verifierKeys[first], digest);
         signatures[1] = _sign(second, verifierKeys[second], digest);
     }

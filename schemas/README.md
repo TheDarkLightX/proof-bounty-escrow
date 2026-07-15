@@ -20,9 +20,15 @@ anything.
 fields against `getBounty`; it never treats an index or gateway as authoritative. Indexes can
 be static files on IPFS, community mirrors, or user-supplied sources.
 
-`claim-package-v1` contains everything a relayer needs to call `claim`. Keep its salt and
+`solver-recovery-v1` is the minimal secret-bearing local backup emitted and strictly imported by
+the static client. It binds chain ID, escrow, deployment ID, canonical decimal bounty ID, solver,
+result digest, salt, and recomputed commitment. Keep it encrypted or offline until the solver is
+ready to reveal; it is not a public discovery record.
+
+`claim-package-v1` is the larger relay/evaluation exchange format. It contains everything a
+relayer needs to call `claim`, including exact verifier indices and signatures. Keep its salt and
 artifact locations private until the solver is ready to reveal. Relaying cannot redirect the
-solver-bound reward, but premature publication can disclose the work.
+solver-bound reward or signed verifier shares, but premature publication can disclose the work.
 
 `evaluator-profile-v1` freezes reproducibility and verifier policy. The contract does not run
 or validate it. The profile also records expected verification effort and a recommended verifier

@@ -7,8 +7,8 @@ FOUNDRY_VERSION := 1.7.1
 FORGE_STD_VERSION := 1.16.2
 FORGE_STD_REVISION := bf647bd6046f2f7da30d0c2bf435e5c76a780c1b
 
-.PHONY: bootstrap fmt build lint test test-fuzz test-invariant model mutations mutations-solidity app-check deployment-config check \
-	check-repro deploy-native-dry-run deploy-erc20-dry-run deploy-native deploy-erc20 audit-deployment generate-manifest
+.PHONY: bootstrap fmt build lint test test-fuzz test-invariant model mutations mutations-solidity app-check release-gate deployment-config check \
+	check-repro deploy-native-plan deploy-erc20-plan deploy-native-dry-run deploy-erc20-dry-run deploy-native deploy-erc20 audit-deployment generate-manifest
 
 bootstrap:
 	npm ci --ignore-scripts --omit=dev
@@ -48,7 +48,12 @@ app-check:
 	npm --prefix app run reproducibility
 	npm --prefix app audit --omit=dev
 
-deployment-config:
+release-gate:
+	python3 -m unittest discover -s scripts/tests -p 'test_*.py'
+	python3 scripts/check_workflow_pins.py
+	python3 scripts/validate_json_schemas.py
+
+deployment-config: release-gate
 	python3 -m unittest scripts/test_generate_deployment_manifest.py
 	jq empty deployments/manifest.schema.json deployments/networks.schema.json deployments/networks.json schemas/*.json
 	jq --exit-status '.compiler == "0.8.36" and .evmVersion == "paris" and ([.networks[].chainId] | length) == ([.networks[].chainId] | unique | length) and ([.networks[].key] | length) == ([.networks[].key] | unique | length)' deployments/networks.json >/dev/null
@@ -70,61 +75,26 @@ check-repro:
 		$(FORGE) inspect ProofBountyEscrowERC20 bytecode >>"$$tmp_second"; \
 		cmp "$$tmp_first" "$$tmp_second"
 
+deploy-native-plan:
+	@python3 scripts/deploy_from_env.py --env-file "$(ENV_FILE)" --forge "$(FORGE)" deploy --variant native
+
+deploy-erc20-plan:
+	@python3 scripts/deploy_from_env.py --env-file "$(ENV_FILE)" --forge "$(FORGE)" deploy --variant erc20
+
 deploy-native-dry-run:
-	@set -eu; \
-		test -f "$(ENV_FILE)"; \
-		set -a; source "$(ENV_FILE)"; set +a; \
-		test -n "$${RPC_URL:-}"; \
-		$(FORGE) script script/DeployNative.s.sol:DeployNative --rpc-url "$$RPC_URL" -vvvv
+	@python3 scripts/deploy_from_env.py --env-file "$(ENV_FILE)" --forge "$(FORGE)" deploy --variant native --simulate
 
 deploy-erc20-dry-run:
-	@set -eu; \
-		test -f "$(ENV_FILE)"; \
-		set -a; source "$(ENV_FILE)"; set +a; \
-		test -n "$${RPC_URL:-}"; \
-		$(FORGE) script script/DeployERC20.s.sol:DeployERC20 --rpc-url "$$RPC_URL" -vvvv
+	@python3 scripts/deploy_from_env.py --env-file "$(ENV_FILE)" --forge "$(FORGE)" deploy --variant erc20 --simulate
 
 deploy-native:
-	@set -eu; \
-		test -n "$(ACCOUNT)"; \
-		test -f "$(ENV_FILE)"; \
-		set -a; source "$(ENV_FILE)"; set +a; \
-		test -n "$${RPC_URL:-}"; \
-		$(FORGE) script script/DeployNative.s.sol:DeployNative --rpc-url "$$RPC_URL" \
-			--account "$(ACCOUNT)" --broadcast --slow -vvvv
+	@python3 scripts/deploy_from_env.py --env-file "$(ENV_FILE)" --forge "$(FORGE)" deploy --variant native --execute --account "$(ACCOUNT)"
 
 deploy-erc20:
-	@set -eu; \
-		test -n "$(ACCOUNT)"; \
-		test -f "$(ENV_FILE)"; \
-		set -a; source "$(ENV_FILE)"; set +a; \
-		test -n "$${RPC_URL:-}"; \
-		$(FORGE) script script/DeployERC20.s.sol:DeployERC20 --rpc-url "$$RPC_URL" \
-			--account "$(ACCOUNT)" --broadcast --slow -vvvv
+	@python3 scripts/deploy_from_env.py --env-file "$(ENV_FILE)" --forge "$(FORGE)" deploy --variant erc20 --execute --account "$(ACCOUNT)"
 
 audit-deployment:
-	@set -eu; \
-		test -f "$(ENV_FILE)"; \
-		set -a; source "$(ENV_FILE)"; set +a; \
-		test -n "$${RPC_URL:-}"; \
-		$(FORGE) script script/AuditDeployment.s.sol:AuditDeployment --rpc-url "$$RPC_URL" -vvvv
+	@python3 scripts/deploy_from_env.py --env-file "$(ENV_FILE)" --forge "$(FORGE)" audit
 
 generate-manifest:
-	@set -eu; \
-		test -f "$(ENV_FILE)"; \
-		set -a; source "$(ENV_FILE)"; set +a; \
-		test -n "$${RPC_URL:-}"; \
-		test -n "$${NETWORK_KEY:-}"; \
-		test -n "$${DEPLOYMENT:-}"; \
-		test -n "$${DEPLOYMENT_TX_HASH:-}"; \
-		test -n "$${PROTOCOL_NAME:-}"; \
-		test -n "$${EXPECTED_RUNTIME_CODE_HASH:-}"; \
-		test -n "$${MANIFEST_OUTPUT:-}"; \
-		args=(python3 scripts/generate_deployment_manifest.py \
-			--network-key "$$NETWORK_KEY" --rpc-url "$$RPC_URL" \
-			--deployment "$$DEPLOYMENT" --transaction-hash "$$DEPLOYMENT_TX_HASH" \
-			--protocol-name "$$PROTOCOL_NAME" --expected-runtime-code-hash "$$EXPECTED_RUNTIME_CODE_HASH" \
-			--confirmations "$${CONFIRMATIONS:-1}" \
-			--output "$$MANIFEST_OUTPUT"); \
-		if test -n "$${SOURCE_REPOSITORY:-}"; then args+=(--source-repository "$$SOURCE_REPOSITORY"); fi; \
-		"$${args[@]}"
+	@python3 scripts/deploy_from_env.py --env-file "$(ENV_FILE)" --forge "$(FORGE)" manifest

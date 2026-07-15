@@ -30,6 +30,11 @@ contract AdversarialERC20 is ERC20 {
         _mint(account, amount);
     }
 
+    /// @dev Models an issuer clawback or negative rebase that reduces escrow assets without its consent.
+    function confiscate(address account, uint256 amount) external {
+        _burn(account, amount);
+    }
+
     function setBehavior(Behavior behavior_) external {
         behavior = behavior_;
     }

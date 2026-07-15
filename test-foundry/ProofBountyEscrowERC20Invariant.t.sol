@@ -202,7 +202,8 @@ contract ERC20EscrowHandler is Test {
         uint8 pair = rawPair % 3;
         uint8 first = pair == 2 ? 1 : 0;
         uint8 second = pair == 0 ? 1 : 2;
-        bytes32 digest = escrow.attestationDigest(result);
+        uint8 signerBitmap = uint8((uint256(1) << first) | (uint256(1) << second));
+        bytes32 digest = escrow.attestationDigest(result, signerBitmap);
         signatures[0] = _sign(first, verifierKeys[first], digest);
         signatures[1] = _sign(second, verifierKeys[second], digest);
     }
@@ -232,6 +233,16 @@ contract ProofBountyEscrowERC20InvariantTest is StdInvariant, Test {
         escrow = new ProofBountyEscrowERC20("Proof Bounty Escrow", IERC20(address(token)), devCo, reserve, verifiers);
         handler = new ERC20EscrowHandler(escrow, token, keys);
         targetContract(address(handler));
+        bytes4[] memory selectors = new bytes4[](8);
+        selectors[0] = ERC20EscrowHandler.createBounty.selector;
+        selectors[1] = ERC20EscrowHandler.commitResult.selector;
+        selectors[2] = ERC20EscrowHandler.advanceTime.selector;
+        selectors[3] = ERC20EscrowHandler.claimResult.selector;
+        selectors[4] = ERC20EscrowHandler.refundBounty.selector;
+        selectors[5] = ERC20EscrowHandler.withdrawCredit.selector;
+        selectors[6] = ERC20EscrowHandler.transferDirectSurplus.selector;
+        selectors[7] = ERC20EscrowHandler.attemptTerminalSettlement.selector;
+        targetSelector(FuzzSelector({addr: address(handler), selectors: selectors}));
     }
 
     function invariant_ExactTokenBalanceEqualsLiabilitiesPlusKnownSurplus() public view {

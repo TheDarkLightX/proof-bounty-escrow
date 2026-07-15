@@ -41,10 +41,10 @@ Dependency or setting changes alter the reviewed source/build graph and require 
 
 ## 3. Recorded executable tests
 
-The release-candidate Foundry suite contains 48 tests:
+The release-candidate Foundry suite contains 53 tests:
 
-- 22 deterministic integration/unit tests;
-- 11 targeted adversarial token/signature tests;
+- 26 deterministic integration/unit tests;
+- 12 targeted adversarial token/signature tests;
 - five fuzz properties;
 - five native-currency stateful invariants; and
 - five exact-transfer ERC-20 stateful invariants.
@@ -62,7 +62,8 @@ The fuzz run executes:
 
 Each native invariant executes 1,000 generated traces with 100 handler calls, for 500,000 aggregate
 stateful calls across the five properties. Each ERC-20 invariant executes 512 traces with 80 calls,
-for 204,800 aggregate calls. Both recorded campaigns report zero handler reverts. The properties
+for 204,800 aggregate calls. Both campaigns target only the eight state-changing handler actions,
+run with `fail_on_revert = true`, and report zero handler reverts. The properties
 cover solvency/surplus identity, funding-withdrawal conservation, open-deposit reconciliation,
 complete known-credit summation, and terminal-state shape. The ERC-20 campaign deliberately uses
 the supported honest exact-transfer token profile; separate adversarial tests cover false returns,
@@ -71,16 +72,18 @@ short transfers, callbacks, and unsupported fee behavior.
 Deterministic/adversarial coverage includes immutable configuration and deployment separation;
 deployment-time verifier-code and self-address guards; malformed creation; exact funding;
 minimum/maximum verifier-pool bounds and the two-unit signer floor; EIP-712 binding of the frozen
-reward and verifier pool;
+reward, verifier pool, and exact paid signer pair; signer-pair substitution rejection and complete
+settlement receipts;
 replaceable per-solver commitments; exact half-open boundaries; first valid claim; exact fee
 allocation; complete expiry refund; cross-chain/deployment/bounty replay rejection; duplicate,
 malformed, compact, and high-`s` signature rejection; verifier self-award rejection; failed native
-and token withdrawal rollback; partial withdrawals; callback reentrancy attempts; surplus handling;
+and token withdrawal rollback; ERC-20 insolvency admission/withdrawal rejection; asset-contract
+credit-sink rejection; partial withdrawals; callback reentrancy attempts; surplus handling;
 ordinary native/ERC-20 lifecycles; and absence of common admin selectors.
 
-The static client separately passes 13 unit tests, TypeScript checking, a production Vite build,
+The static client separately passes 14 unit tests, TypeScript checking, a production Vite build,
 and two-build content reproducibility. The recorded `dist/` tree SHA-256 is
-`f9c4aae91160a706209b11c4d8d0ab01c4101b99de009342ad8b302335e68c48`; regenerate it from the final
+`31732f3dfab08c36086829ef7a00ea98339d696a1c6a904cc42e83d33cd733b1`; regenerate it from the final
 revision rather than treating this historical hash as a live release. Its production dependency
 audit reports zero known vulnerabilities at the recorded time.
 
@@ -93,7 +96,7 @@ EVM state, browser/provider behavior, external token, or chain implementation.
 explicit bounds:
 
 - two solvers;
-- three verifiers and every two-verifier pair;
+- three verifiers, every two-verifier pair, and a distinct signed-versus-submitted pair;
 - reward inputs `1`, `2`, `199`, and `10,200`, including the rejected one-unit boundary;
 - verifier-pool inputs at, immediately around, and above the absolute and percentage-derived
   bounds for each reward;
@@ -111,18 +114,20 @@ refinement proof between model and implementation.
 
 ## 5. Mutation sensitivity
 
-`verification/model/mutation_check.py` verifies that the bounded properties kill 12 abstract
+`verification/model/mutation_check.py` verifies that the bounded properties kill 13 abstract
 semantic faults: accepting commit at the boundary, accepting claim at the refund boundary, double
 settlement, ignoring the solver commitment, deducting fees from the solver, omitting fees from the
 refund, retaining escrow liability after claim, double-crediting one verifier, accepting a pool
 below or above its bounds, accepting a reward below the absolute minimum, and replacing the
-declared pool during settlement. The recorded run killed all 12.
+declared pool during settlement, and ignoring the signed verifier pair. The recorded run killed all
+13.
 
-`verification/solidity_mutation_check.py` creates isolated temporary source trees and applies 17
+`verification/solidity_mutation_check.py` creates isolated temporary source trees and applies 23
 compiling Solidity mutations covering commit/claim/refund boundaries, terminal status, solver fee,
 refund fee, reveal equality, escrow liability, duplicate verifier index, verifier-as-solver,
-reward/pool bounds, declared-pool funding and settlement, and the absolute signer floor. Targeted
-tests killed all 17 in the recorded run.
+reward/pool bounds, declared-pool funding and settlement, the absolute signer floor, signer-pair
+binding, ERC-20 solvency admission, and asset-contract credit sinks. Targeted tests killed all 23 in
+the recorded run.
 
 Mutation scores demonstrate that current checks are sensitive to those selected faults. They are
 not exhaustive source mutation, bytecode equivalence, or a proof that an unknown fault is absent.
@@ -155,6 +160,13 @@ patterns, and intentional timestamp windows. [Slither triage](slither-triage.md)
 and residual assumptions. CI fails on any unacknowledged high-impact detector result. Slither's
 `success: true` means analysis completed, not that the code is finding-free.
 
+The offline release gate requires every external GitHub Action reference to use a reviewed
+40-hex commit SHA with a human-readable version comment. It also rejects duplicate JSON keys,
+unknown schema keywords, unresolved local references, invalid patterns, and checked-in instances
+that violate the repository's closed Draft 2020-12 profile. The dependency-free validator covers
+only the explicitly implemented keyword set and fails closed when a future schema uses a new
+keyword; it is not a complete independent implementation of JSON Schema.
+
 An independent review agent identified a cumulative-withdrawal telemetry overflow that could have
 blocked withdrawals after enough funding cycles, self-referential recipient traps, deployment
 provenance weaknesses, and several frontend stale-target/split-provider/privacy failures. The
@@ -163,15 +175,20 @@ creation provenance checks were strengthened; and client writes now invalidate s
 re-verify and simulate through the injected provider, compute secret-bearing hashes locally, and
 gate verifier requests on public phase/commitment state. Re-review found no remaining concrete
 theft, replay, reentrancy, or conservation defect under the documented exact-transfer asset and
-honest-threshold assumptions. This was an internal adversarial review, not an external audit.
+honest-threshold assumptions. A later review did find an unsigned verifier-pair fee-redirection
+path and ERC-20 insolvency contamination; the signer bitmap, settlement receipt, solvency gates,
+asset-credit-sink guards, model property, and adversarial tests in this revision address those
+counterexamples. Late-claim reorg risk, immutable-key readiness, evaluator correctness, and the
+V1 outcome-linked reviewer incentive remain explicit limitations. These were internal adversarial
+reviews, not an external audit.
 
 A clean local deployment rehearsal also exposed that `cast` annotates some decoded integers (for
 example, `10000 [1e4]`) and the first manifest parser rejected that valid form. The parser was
 hardened to accept only strict decimal/hex integers with an optional bracketed annotation, reject
 trailing data, and a regression test was added to the default deployment-configuration gate.
 
-The clean size build reports template runtime sizes of 10,806 bytes for the native adapter and
-12,112 bytes for the ERC-20 adapter, below the 24,576-byte EIP-170 limit under recorded settings.
+The clean size build reports template runtime sizes of 11,968 bytes for the native adapter and
+13,379 bytes for the ERC-20 adapter, below the 24,576-byte EIP-170 limit under recorded settings.
 The larger audit *script* is not deployed. Constructor immutables alter deployed runtime bytes, so
 template hashes are not deployment evidence.
 
@@ -190,8 +207,8 @@ PulseChain Testnet V4 compatibility, token approval, or a public deployment.
 | Solver receives advertised reward | Allocation tests, 2,000-case claim fuzz, invariants, model/mutation | Supported asset and later withdrawal required |
 | Expiry returns reward and proposed fees | Refund tests, 2,000-case fuzz, invariants, model/mutation | Refund key and asset must remain usable |
 | Liabilities remain conserved | Deterministic/adversarial tests plus 704,800 aggregate invariant calls | Arbitrary malicious/rebasing/upgraded tokens unsupported |
-| Signatures bind deployment/result | EIP-712 implementation, replay/malleability tests, commitment fuzz, symbolic encoding | ECDSA/OZ/EVM and verifier endpoint correctness assumed |
-| Exact-transfer behavior is enforced at observed transfers | Balance deltas, fee/false/short/callback tests, ERC-20 invariants | Issuer controls, dishonest balances, future upgrades unsupported |
+| Signatures bind deployment/result/paid verifier pair | EIP-712 implementation, pair-substitution and replay/malleability tests, model/mutations, commitment fuzz, symbolic encoding | ECDSA/OZ/EVM and verifier endpoint correctness assumed |
+| Exact-transfer behavior and solvency are enforced at observed transfers | Balance deltas, insolvency/clawback, fee/false/short/callback tests, ERC-20 invariants | Issuer controls, dishonest balances, and future upgrades can still freeze an existing deployment |
 | No privileged admin surface | Source review and selector-negative test | Supply-chain/deployment substitution still requires release evidence |
 | Client does not RPC-leak commitment preimages before reveal | Local encoding implementation/tests and review | A compromised page, wallet, device, or later claim still reveals data |
 | Generated observation binds clean source to creation transaction | Clean-worktree gate, exact initcode prefix/constructor decode, receipt/config/runtime checks | Unsigned observation is not explorer verification or reviewer approval |

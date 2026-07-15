@@ -79,7 +79,7 @@ Use complete authenticated manifests in a real release. The UI intentionally doe
 - Compute and submit a solver commitment.
 - Generate a cryptographically random 32-byte salt with Web Crypto.
 - Download/import a local solver recovery package containing the salt and result digest.
-- Build the exact EIP-712 verifier request locally, but only after a chain-timestamp check proves the commit phase closed and a public read proves the exact solver commitment is stored. The request includes an explicitly unsigned `claimReveal` so a verifier can recompute the commitment before signing.
+- Build the exact signer-pair-bound EIP-712 verifier request locally, but only from a finalized block after a chain-timestamp check proves the commit phase closed and a public read proves the exact solver commitment is stored. Preparation fails closed when the RPC does not expose the `finalized` block tag. The request includes an explicitly unsigned `claimReveal` so a verifier can recompute the commitment before signing.
 - Relay a claim carrying two prebuilt 65-byte verifier signatures.
 - Permissionlessly mark an expired bounty refunded.
 - Read and withdraw the connected account's pull-payment credit.

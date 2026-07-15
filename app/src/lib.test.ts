@@ -7,6 +7,7 @@ import {
   hashExactBytes,
   hashExactText,
   normalizeManifest,
+  parseSolverRecoveryPackage,
   requireBytes32,
   requireNonzeroBytes32,
   requireSignature,
@@ -58,6 +59,28 @@ describe("solver commitment", () => {
       `0x${"22".repeat(32)}`,
       `0x${"33".repeat(32)}`,
     )).toBe("0xa037a14e13f9e85f5bfef1710328a07e197bb324d9340987cf57a269e680d91b");
+  });
+
+  it("strictly validates and deployment-binds solver recovery packages", () => {
+    const deploymentId = `0x${"11".repeat(32)}` as const;
+    const escrow = "0x0000000000000000000000000000000000001234" as const;
+    const solver = "0x0000000000000000000000000000000000005678" as const;
+    const resultDigest = `0x${"22".repeat(32)}` as const;
+    const salt = `0x${"33".repeat(32)}` as const;
+    const commitment = computeSolverCommitment(deploymentId, 7n, solver, resultDigest, salt);
+    const recovery = {
+      schema: "proof-bounty-solver-recovery/v1",
+      chainId: 943,
+      escrow,
+      deploymentId,
+      claim: { bountyId: "7", solver, resultDigest, salt },
+      commitment,
+    };
+    expect(parseSolverRecoveryPackage(recovery, 943, escrow, deploymentId).claim.bountyId).toBe("7");
+    expect(() => parseSolverRecoveryPackage({ ...recovery, extra: true }, 943, escrow, deploymentId)).toThrow(/fields/);
+    expect(() => parseSolverRecoveryPackage({ ...recovery, chainId: 369 }, 943, escrow, deploymentId)).toThrow(/chain/);
+    expect(() => parseSolverRecoveryPackage({ ...recovery, commitment: `0x${"44".repeat(32)}` }, 943, escrow, deploymentId)).toThrow(/commitment/);
+    expect(() => parseSolverRecoveryPackage({ ...recovery, claim: { ...recovery.claim, bountyId: "07" } }, 943, escrow, deploymentId)).toThrow(/canonical/);
   });
 });
 

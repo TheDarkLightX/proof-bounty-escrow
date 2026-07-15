@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://proof-bounty.invalid/schemas/solver-recovery-v1.json",
+  "title": "Proof bounty solver recovery package V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "chainId", "escrow", "deploymentId", "claim", "commitment"],
+  "properties": {
+    "schema": { "const": "proof-bounty-solver-recovery/v1" },
+    "chainId": { "type": "integer", "minimum": 1 },
+    "escrow": { "$ref": "#/$defs/address" },
+    "deploymentId": { "$ref": "#/$defs/nonzeroHash" },
+    "claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bountyId", "solver", "resultDigest", "salt"],
+      "properties": {
+        "bountyId": { "type": "string", "pattern": "^[1-9][0-9]*$" },
+        "solver": { "$ref": "#/$defs/address" },
+        "resultDigest": { "$ref": "#/$defs/nonzeroHash" },
+        "salt": { "$ref": "#/$defs/nonzeroHash" }
+      }
+    },
+    "commitment": { "$ref": "#/$defs/nonzeroHash" }
+  },
+  "$defs": {
+    "address": { "type": "string", "pattern": "^0x[0-9a-fA-F]{40}$" },
+    "nonzeroHash": {
+      "type": "string",
+      "pattern": "^0x(?!0{64}$)[0-9a-fA-F]{64}$"
+    }
+  }
+}
