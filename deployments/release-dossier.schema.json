@@ -1,0 +1,154 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://proof-bounty.invalid/schemas/release-dossier-v1.json",
+  "title": "Proof Bounty Escrow reviewed release dossier",
+  "description": "Human-reviewed activation record that references an unsigned deployment observation and external evidence.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "kind",
+    "status",
+    "observation",
+    "sourceVerification",
+    "frontend",
+    "finalityPolicy",
+    "smokeTests",
+    "assetReview",
+    "reviewers"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "kind": { "const": "proof-bounty-release-dossier" },
+    "status": { "enum": ["test", "active", "deprecated", "incident"] },
+    "observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["uri", "sha256"],
+      "properties": {
+        "uri": { "type": "string", "format": "uri" },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "sourceVerification": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["service", "url", "status", "verifiedAt"],
+        "properties": {
+          "service": { "type": "string", "minLength": 1 },
+          "url": { "type": "string", "format": "uri" },
+          "status": { "const": "exact-match" },
+          "verifiedAt": { "type": "string", "format": "date-time" }
+        }
+      }
+    },
+    "frontend": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["releaseUri", "contentSha256", "abiHash"],
+      "properties": {
+        "releaseUri": { "type": "string", "format": "uri" },
+        "contentSha256": { "$ref": "#/$defs/sha256" },
+        "abiHash": { "$ref": "#/$defs/hash" }
+      }
+    },
+    "finalityPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["minimumConfirmations", "policy"],
+      "properties": {
+        "minimumConfirmations": { "type": "integer", "minimum": 1 },
+        "policy": { "type": "string", "minLength": 20 }
+      }
+    },
+    "smokeTests": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["completedAt", "transactions"],
+      "properties": {
+        "completedAt": { "type": "string", "format": "date-time" },
+        "transactions": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["purpose", "transactionHash", "status"],
+            "properties": {
+              "purpose": { "type": "string", "minLength": 1 },
+              "transactionHash": { "$ref": "#/$defs/hash" },
+              "status": { "const": "passed" }
+            }
+          }
+        }
+      }
+    },
+    "assetReview": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "address",
+        "runtimeCodeHash",
+        "displaySymbol",
+        "displayDecimals",
+        "proxyImplementation",
+        "proxyAdmin",
+        "upgradeability",
+        "issuerControls",
+        "decision",
+        "reviewedAt"
+      ],
+      "properties": {
+        "kind": { "enum": ["native", "erc20"] },
+        "address": { "$ref": "#/$defs/address" },
+        "runtimeCodeHash": {
+          "oneOf": [{ "$ref": "#/$defs/hash" }, { "type": "null" }]
+        },
+        "displaySymbol": { "type": "string", "minLength": 1, "maxLength": 32 },
+        "displayDecimals": { "type": "integer", "minimum": 0, "maximum": 255 },
+        "proxyImplementation": {
+          "oneOf": [{ "$ref": "#/$defs/address" }, { "type": "null" }]
+        },
+        "proxyAdmin": {
+          "oneOf": [{ "$ref": "#/$defs/address" }, { "type": "null" }]
+        },
+        "upgradeability": { "type": "string", "minLength": 1 },
+        "issuerControls": { "type": "string", "minLength": 1 },
+        "decision": { "enum": ["approved-test-only", "approved", "rejected"] },
+        "reviewedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "reviewers": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["identity", "scheme", "signatureUri", "signedPayloadSha256"],
+        "properties": {
+          "identity": { "type": "string", "minLength": 1 },
+          "scheme": { "enum": ["eip191", "pgp", "minisign", "sigstore"] },
+          "publicKeyUri": { "type": "string", "format": "uri" },
+          "signatureUri": { "type": "string", "format": "uri" },
+          "signedPayloadSha256": { "$ref": "#/$defs/sha256" }
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "active" } } },
+      "then": { "properties": { "reviewers": { "minItems": 2 } } }
+    }
+  ],
+  "$defs": {
+    "address": { "type": "string", "pattern": "^0x[0-9a-fA-F]{40}$" },
+    "hash": { "type": "string", "pattern": "^0x[0-9a-fA-F]{64}$" },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  }
+}

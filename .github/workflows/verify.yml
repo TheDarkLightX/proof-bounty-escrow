@@ -1,0 +1,144 @@
+name: Verify
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FOUNDRY_VERSION: 1.7.1
+  FOUNDRY_ARCHIVE_SHA256: cf7e688ed0c4c48adffca788b496076e31060b67ac5afe1e43dbb5499c20c88b
+  FORGE_STD_VERSION: 1.16.2
+  FORGE_STD_REVISION: bf647bd6046f2f7da30d0c2bf435e5c76a780c1b
+  SOLC_VERSION: 0.8.36
+
+jobs:
+  forge-and-model:
+    name: Forge, model, and reproducibility
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.19.1
+          cache: npm
+
+      - name: Install pinned Foundry binaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="${RUNNER_TEMP}/foundry.tar.gz"
+          curl --fail --location --proto '=https' --tlsv1.2 \
+            "https://github.com/foundry-rs/foundry/releases/download/v${FOUNDRY_VERSION}/foundry_v${FOUNDRY_VERSION}_linux_amd64.tar.gz" \
+            --output "${archive}"
+          echo "${FOUNDRY_ARCHIVE_SHA256}  ${archive}" | sha256sum --check --strict
+          install -d "${HOME}/.local/bin"
+          tar --extract --gzip --file "${archive}" --directory "${HOME}/.local/bin"
+          echo "${HOME}/.local/bin" >> "${GITHUB_PATH}"
+          "${HOME}/.local/bin/forge" --version | grep --fixed-strings "Version: ${FOUNDRY_VERSION}"
+
+      - name: Install pinned Solidity dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts --omit=dev
+          npm --prefix app ci --ignore-scripts
+          forge install "foundry-rs/forge-std@${FORGE_STD_REVISION}" --no-git
+          test "$(node -p "require('./lib/forge-std/package.json').version")" = "${FORGE_STD_VERSION}"
+
+      - name: Assert compiler profile
+        shell: bash
+        run: |
+          set -euo pipefail
+          forge config --json | jq --exit-status \
+            --arg solc "${SOLC_VERSION}" \
+            '.solc == $solc and .evm_version == "paris" and .optimizer == true and .optimizer_runs == 200'
+
+      - name: Run full verification suite
+        run: make check
+
+  slither:
+    name: Slither high-impact gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.19.1
+          cache: npm
+
+      - name: Install pinned Foundry binaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="${RUNNER_TEMP}/foundry.tar.gz"
+          curl --fail --location --proto '=https' --tlsv1.2 \
+            "https://github.com/foundry-rs/foundry/releases/download/v${FOUNDRY_VERSION}/foundry_v${FOUNDRY_VERSION}_linux_amd64.tar.gz" \
+            --output "${archive}"
+          echo "${FOUNDRY_ARCHIVE_SHA256}  ${archive}" | sha256sum --check --strict
+          install -d "${HOME}/.local/bin"
+          tar --extract --gzip --file "${archive}" --directory "${HOME}/.local/bin"
+          echo "${HOME}/.local/bin" >> "${GITHUB_PATH}"
+
+      - name: Install analysis dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts --omit=dev
+          forge install "foundry-rs/forge-std@${FORGE_STD_REVISION}" --no-git
+          pipx install slither-analyzer==0.11.5
+
+      - name: Run Slither
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          # Pull-payment destinations are creditor-selected. The ERC-20 entry points are
+          # nonReentrant, and their before/after balance reads enforce exact-transfer semantics.
+          set +e
+          slither . \
+            --compile-force-framework foundry \
+            --exclude-dependencies \
+            --filter-paths '(contracts/mocks|test-foundry|script|lib|node_modules)' \
+            --json artifacts/slither-report.json
+          slither_status=$?
+          set -e
+          test -s artifacts/slither-report.json || exit "${slither_status}"
+          jq --exit-status '
+            def function_name:
+              ([.elements[] | select(.type == "function") | .name] | first);
+            def source_file:
+              ([.elements[] | select(.type == "function") | .source_mapping.filename_relative] | first);
+            def accepted_high_impact_pattern:
+              (.check == "arbitrary-send-eth"
+                and function_name == "_sendAsset"
+                and source_file == "contracts/ProofBountyEscrowNative.sol")
+              or
+              (.check == "reentrancy-balance"
+                and (function_name == "createBounty" or function_name == "_sendAsset")
+                and source_file == "contracts/ProofBountyEscrowERC20.sol");
+            .success == true
+              and ([.results.detectors[]
+                | select(.impact == "High")
+                | select(accepted_high_impact_pattern | not)] | length == 0)
+          ' artifacts/slither-report.json
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: slither-report
+          path: artifacts/slither-report.json
+          if-no-files-found: ignore
+          retention-days: 14

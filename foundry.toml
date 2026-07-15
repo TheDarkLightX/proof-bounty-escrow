@@ -1,0 +1,32 @@
+[profile.default]
+src = "contracts"
+test = "test-foundry"
+script = "script"
+out = "out"
+libs = ["node_modules", "lib"]
+solc_version = "0.8.36"
+evm_version = "paris"
+optimizer = true
+optimizer_runs = 200
+via_ir = false
+bytecode_hash = "ipfs"
+# OpenZeppelin 5.0.2 uses the then-current memory-safe assembly annotation and names
+# a local variable `error`; solc 0.8.36 emits dependency-only forward-compatibility
+# warnings for both. The compiler is exact-pinned and project warnings remain denied.
+ignored_error_codes = [2424, 6335]
+ffi = false
+fs_permissions = [{ access = "read", path = "./artifacts" }]
+
+[fuzz]
+runs = 10000
+seed = "0x50524f4f46424f554e5459"
+
+[invariant]
+runs = 1000
+depth = 100
+fail_on_revert = false
+call_override = false
+shrink_run_limit = 10000
+
+[lint]
+exclude_lints = ["block-timestamp"]

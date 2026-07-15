@@ -1,0 +1,136 @@
+{
+  "$schema": "./networks.schema.json",
+  "schemaVersion": 1,
+  "compiler": "0.8.36",
+  "evmVersion": "paris",
+  "networks": [
+    {
+      "key": "pulsechain",
+      "name": "PulseChain",
+      "chainId": 369,
+      "environment": "mainnet",
+      "rpcEnvironmentVariable": "PULSECHAIN_RPC_URL",
+      "variants": ["native", "erc20"]
+    },
+    {
+      "key": "pulsechain-v4",
+      "name": "PulseChain Testnet V4",
+      "chainId": 943,
+      "environment": "testnet",
+      "rpcEnvironmentVariable": "PULSECHAIN_V4_RPC_URL",
+      "variants": ["native", "erc20"]
+    },
+    {
+      "key": "ethereum",
+      "name": "Ethereum",
+      "chainId": 1,
+      "environment": "mainnet",
+      "rpcEnvironmentVariable": "ETHEREUM_RPC_URL",
+      "variants": ["native", "erc20"]
+    },
+    {
+      "key": "sepolia",
+      "name": "Ethereum Sepolia",
+      "chainId": 11155111,
+      "environment": "testnet",
+      "rpcEnvironmentVariable": "SEPOLIA_RPC_URL",
+      "variants": ["native", "erc20"]
+    },
+    {
+      "key": "base",
+      "name": "Base",
+      "chainId": 8453,
+      "environment": "mainnet",
+      "rpcEnvironmentVariable": "BASE_RPC_URL",
+      "variants": ["native", "erc20"]
+    },
+    {
+      "key": "base-sepolia",
+      "name": "Base Sepolia",
+      "chainId": 84532,
+      "environment": "testnet",
+      "rpcEnvironmentVariable": "BASE_SEPOLIA_RPC_URL",
+      "variants": ["native", "erc20"]
+    },
+    {
+      "key": "arbitrum-one",
+      "name": "Arbitrum One",
+      "chainId": 42161,
+      "environment": "mainnet",
+      "rpcEnvironmentVariable": "ARBITRUM_RPC_URL",
+      "variants": ["native", "erc20"]
+    },
+    {
+      "key": "arbitrum-sepolia",
+      "name": "Arbitrum Sepolia",
+      "chainId": 421614,
+      "environment": "testnet",
+      "rpcEnvironmentVariable": "ARBITRUM_SEPOLIA_RPC_URL",
+      "variants": ["native", "erc20"]
+    },
+    {
+      "key": "optimism",
+      "name": "OP Mainnet",
+      "chainId": 10,
+      "environment": "mainnet",
+      "rpcEnvironmentVariable": "OPTIMISM_RPC_URL",
+      "variants": ["native", "erc20"]
+    },
+    {
+      "key": "optimism-sepolia",
+      "name": "OP Sepolia",
+      "chainId": 11155420,
+      "environment": "testnet",
+      "rpcEnvironmentVariable": "OPTIMISM_SEPOLIA_RPC_URL",
+      "variants": ["native", "erc20"]
+    },
+    {
+      "key": "polygon",
+      "name": "Polygon PoS",
+      "chainId": 137,
+      "environment": "mainnet",
+      "rpcEnvironmentVariable": "POLYGON_RPC_URL",
+      "variants": ["native", "erc20"]
+    },
+    {
+      "key": "polygon-amoy",
+      "name": "Polygon Amoy",
+      "chainId": 80002,
+      "environment": "testnet",
+      "rpcEnvironmentVariable": "POLYGON_AMOY_RPC_URL",
+      "variants": ["native", "erc20"]
+    },
+    {
+      "key": "bsc",
+      "name": "BNB Smart Chain",
+      "chainId": 56,
+      "environment": "mainnet",
+      "rpcEnvironmentVariable": "BSC_RPC_URL",
+      "variants": ["native", "erc20"]
+    },
+    {
+      "key": "bsc-testnet",
+      "name": "BNB Smart Chain Testnet",
+      "chainId": 97,
+      "environment": "testnet",
+      "rpcEnvironmentVariable": "BSC_TESTNET_RPC_URL",
+      "variants": ["native", "erc20"]
+    },
+    {
+      "key": "avalanche-c",
+      "name": "Avalanche C-Chain",
+      "chainId": 43114,
+      "environment": "mainnet",
+      "rpcEnvironmentVariable": "AVALANCHE_RPC_URL",
+      "variants": ["native", "erc20"]
+    },
+    {
+      "key": "avalanche-fuji",
+      "name": "Avalanche Fuji",
+      "chainId": 43113,
+      "environment": "testnet",
+      "rpcEnvironmentVariable": "AVALANCHE_FUJI_RPC_URL",
+      "variants": ["native", "erc20"]
+    }
+  ]
+}

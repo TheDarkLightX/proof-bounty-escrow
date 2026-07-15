@@ -1,0 +1,21 @@
+{
+  "name": "proof-bounty-escrow",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Chain-local, verifier-attested proof bounty escrow for EVM networks",
+  "type": "module",
+  "scripts": {
+    "build": "forge build --sizes",
+    "format:check": "forge fmt --check",
+    "test": "forge test -vv",
+    "test:fuzz": "forge test --match-contract ProofBountyEscrowFuzzTest -vv",
+    "test:invariant": "forge test --match-contract '^ProofBountyEscrow(ERC20)?InvariantTest$' -vv",
+    "model": "python3 verification/model/model_check.py",
+    "mutations": "python3 verification/model/mutation_check.py",
+    "mutations:solidity": "python3 verification/solidity_mutation_check.py",
+    "verify": "npm run format:check && npm run build && npm test && npm run model && npm run mutations && npm run mutations:solidity"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "5.0.2"
+  }
+}

@@ -1,0 +1,192 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://proof-bounty.invalid/schemas/deployment-observation-v1.json",
+  "title": "Proof Bounty Escrow unsigned deployment observation",
+  "description": "Machine-generated chain/build observation. It is not an activation decision or signed release dossier.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "kind",
+    "status",
+    "generatedAt",
+    "source",
+    "toolchain",
+    "build",
+    "deployment",
+    "configuration"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "kind": { "const": "proof-bounty-deployment-observation" },
+    "status": { "const": "unsigned-observation" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["revision", "worktreeClean"],
+      "properties": {
+        "repository": { "type": "string", "format": "uri" },
+        "revision": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "worktreeClean": { "const": true }
+      }
+    },
+    "toolchain": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "foundry",
+        "forgeBinarySha256",
+        "forgeStd",
+        "forgeStdTreeSha256",
+        "openzeppelinContracts",
+        "openzeppelinIntegrity",
+        "solc",
+        "evmVersion",
+        "optimizerEnabled",
+        "optimizerRuns",
+        "viaIr",
+        "metadataBytecodeHash"
+      ],
+      "properties": {
+        "foundry": { "const": "1.7.1" },
+        "forgeBinarySha256": { "$ref": "#/$defs/sha256" },
+        "forgeStd": { "const": "1.16.2" },
+        "forgeStdTreeSha256": { "$ref": "#/$defs/sha256" },
+        "openzeppelinContracts": { "const": "5.0.2" },
+        "openzeppelinIntegrity": {
+          "const": "sha512-ytPc6eLGcHHnapAZ9S+5qsdomhjo6QBHTDRRBFfTxXIpsicMhVPouPgmUPebZZZGX7vt9USA+Z+0M0dSVtSUEA=="
+        },
+        "solc": { "const": "0.8.36" },
+        "evmVersion": { "const": "paris" },
+        "optimizerEnabled": { "const": true },
+        "optimizerRuns": { "const": 200 },
+        "viaIr": { "const": false },
+        "metadataBytecodeHash": { "const": "ipfs" }
+      }
+    },
+    "build": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contract",
+        "abiCanonicalization",
+        "abiHash",
+        "creationCodeHash",
+        "constructorArgumentsHash"
+      ],
+      "properties": {
+        "contract": { "enum": ["ProofBountyEscrowNative", "ProofBountyEscrowERC20"] },
+        "abiCanonicalization": { "const": "utf8-json-sort-keys-no-whitespace-v1" },
+        "abiHash": { "$ref": "#/$defs/hash" },
+        "creationCodeHash": { "$ref": "#/$defs/hash" },
+        "constructorArgumentsHash": { "$ref": "#/$defs/hash" }
+      }
+    },
+    "deployment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "networkKey",
+        "network",
+        "environment",
+        "chainId",
+        "variant",
+        "contractAddress",
+        "deployer",
+        "transactionHash",
+        "transactionInputHash",
+        "blockNumber",
+        "blockHash",
+        "observedConfirmations",
+        "runtimeCodeHash"
+      ],
+      "properties": {
+        "networkKey": { "type": "string", "minLength": 1 },
+        "network": { "type": "string", "minLength": 1 },
+        "environment": { "enum": ["mainnet", "testnet"] },
+        "chainId": { "type": "integer", "minimum": 1 },
+        "variant": { "enum": ["native", "erc20"] },
+        "contractAddress": { "$ref": "#/$defs/address" },
+        "deployer": { "$ref": "#/$defs/address" },
+        "transactionHash": { "$ref": "#/$defs/hash" },
+        "transactionInputHash": { "$ref": "#/$defs/hash" },
+        "blockNumber": { "type": "integer", "minimum": 0 },
+        "blockHash": { "$ref": "#/$defs/hash" },
+        "observedConfirmations": { "type": "integer", "minimum": 1 },
+        "runtimeCodeHash": { "$ref": "#/$defs/hash" }
+      }
+    },
+    "configuration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "protocolName",
+        "protocolVersion",
+        "protocolId",
+        "deploymentId",
+        "asset",
+        "devCo",
+        "securityReserve",
+        "verifiers",
+        "verifierSetHash",
+        "verifierThreshold",
+        "feePolicy"
+      ],
+      "properties": {
+        "protocolName": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "protocolVersion": { "const": "1" },
+        "protocolId": { "$ref": "#/$defs/hash" },
+        "deploymentId": { "$ref": "#/$defs/hash" },
+        "asset": { "$ref": "#/$defs/address" },
+        "assetCodeHash": { "$ref": "#/$defs/hash" },
+        "devCo": { "$ref": "#/$defs/address" },
+        "securityReserve": { "$ref": "#/$defs/address" },
+        "verifiers": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/address" }
+        },
+        "verifierSetHash": { "$ref": "#/$defs/hash" },
+        "verifierThreshold": { "const": 2 },
+        "feePolicy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["devCoBps", "securityReserveBps", "fixedFeeBps", "minimumRewardUnits", "verifierFee"],
+          "properties": {
+            "devCoBps": { "const": 200 },
+            "securityReserveBps": { "const": 50 },
+            "fixedFeeBps": { "const": 250 },
+            "minimumRewardUnits": { "const": 2 },
+            "verifierFee": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["mode", "minimumBps", "minimumUnits", "maximumBps"],
+              "properties": {
+                "mode": { "const": "sponsor-declared-absolute" },
+                "minimumBps": { "const": 50 },
+                "minimumUnits": { "const": 2 },
+                "maximumBps": { "const": 10000 }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "deployment": { "properties": { "variant": { "const": "erc20" } } } }
+      },
+      "then": { "properties": { "configuration": { "required": ["assetCodeHash"] } } }
+    }
+  ],
+  "$defs": {
+    "address": { "type": "string", "pattern": "^0x[0-9a-fA-F]{40}$" },
+    "hash": { "type": "string", "pattern": "^0x[0-9a-fA-F]{64}$" },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  }
+}

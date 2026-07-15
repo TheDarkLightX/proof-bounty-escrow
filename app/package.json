@@ -1,0 +1,25 @@
+{
+  "name": "proof-bounty-escrow-app",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "verify": "npm test && npm run build",
+    "reproducibility": "node scripts/reproducibility.mjs"
+  },
+  "dependencies": {
+    "viem": "2.55.2"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "vite": "7.1.12",
+    "vitest": "3.2.4"
+  },
+  "engines": {
+    "node": ">=20.19.0"
+  }
+}
