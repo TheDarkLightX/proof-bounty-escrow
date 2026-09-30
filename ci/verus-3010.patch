@@ -1,0 +1,160 @@
+diff --git a/source/vir/src/prelude.rs b/source/vir/src/prelude.rs
+--- a/source/vir/src/prelude.rs
++++ b/source/vir/src/prelude.rs
+@@ -238,7 +238,7 @@
+         (declare-fun [has_type] ([Poly] [typ]) Bool)
+         (declare-fun [sized] ([decoration]) Bool)
+         (declare-fun [as_type] ([Poly] [typ]) [Poly])
+-        (declare-fun [mk_fun] (Fun) Fun)
++        (declare-fun [mk_fun] ([typ] Fun) Fun)
+         (declare-fun [const_int] ([typ]) Int)
+         (declare-fun [const_bool] ([typ]) Bool)
+         (declare-fun [mut_ref_current] ([Poly]) [Poly])
+@@ -398,12 +398,6 @@
+             :qid prelude_as_type
+             :skolemid skolem_prelude_as_type
+         )))
+-        (axiom (forall ((x Fun)) (!
+-            (= ([mk_fun] x) x)
+-            :pattern (([mk_fun] x))
+-            :qid prelude_mk_fun
+-            :skolemid skolem_prelude_mk_fun
+-        )))
+         (axiom (forall ((x Bool)) (!
+             (= x ([unbox_bool] ([box_bool] x)))
+             :pattern (([box_bool] x))
+diff --git a/source/vir/src/sst_to_air.rs b/source/vir/src/sst_to_air.rs
+--- a/source/vir/src/sst_to_air.rs
++++ b/source/vir/src/sst_to_air.rs
+@@ -1547,7 +1547,8 @@
+                 })?;
+                 let qid = (triggers.len() > 0).then(|| ()).and_then(|_| new_user_qid(ctx, &exp));
+                 let lambda = air::ast_util::mk_lambda(&binders, &triggers, qid, &expr);
+-                str_apply(crate::def::MK_FUN, &vec![lambda])
++                let typ = typ_to_id(ctx, &exp.typ);
++                str_apply(crate::def::MK_FUN, &vec![typ, lambda])
+             }
+             BndX::Choose(binders, trigs, cond) => {
+                 let mut bs: Vec<Binder<air::ast::Typ>> = Vec::new();
+diff --git a/source/vir/src/datatype_to_air.rs b/source/vir/src/datatype_to_air.rs
+--- a/source/vir/src/datatype_to_air.rs
++++ b/source/vir/src/datatype_to_air.rs
+@@ -235,7 +235,7 @@
+         fun_params = Some(params.clone());
+         let tparamret = typ_args.last().expect("return type").clone();
+-        let app = Arc::new(ExprX::ApplyFun(apolytyp.clone(), x_var.clone(), args));
++        let app = Arc::new(ExprX::ApplyFun(apolytyp.clone(), x_var.clone(), args.clone()));
+         let has_app = typ_invariant(ctx, &tparamret, &app).expect("return invariant");
+ 
+         // SpecFn constructor axiom:
+@@ -243,8 +243,8 @@
+         // forall typ1 ... typn, tret, x: Fun.
+         //   (forall arg1: Poly ... argn: Poly.
+         //     has_type1 && ... && has_typen ==> has_type(apply(x, args), tret)) ==>
+-        //   has_type(box(mk_fun(x)), FUN(typ1...typn, tret))
+-        // trigger on has_type(box(mk_fun(x)), FUN(typ1...typn, tret))
++        //   has_type(box(mk_fun(FUN(typ1...typn, tret), x)), FUN(typ1...typn, tret))
++        // trigger on has_type(box(mk_fun(FUN(typ1...typn, tret), x)), FUN(typ1...typn, tret))
+         let inner_trigs = vec![has_app.clone()];
+         let name = format!("{}_{}", path_as_friendly_rust_name(dpath), QID_CONSTRUCTOR_INNER);
+         let inner_bind = func_bind_trig(
+@@ -261,8 +261,8 @@
+         fun_has = Some(inner_pre.clone());
+         let inner_imply = mk_implies(&inner_pre, &has_app);
+         let inner_forall = mk_bind_expr(&inner_bind, &inner_imply);
+-        let mk_fun = str_apply(crate::def::MK_FUN, &vec![x_var.clone()]);
+-        let box_mk_fun = ident_apply(&ctx.name_ctxt.prefix_box(dpath), &vec![mk_fun]);
++        let mk_fun = str_apply(crate::def::MK_FUN, &vec![id.clone(), x_var.clone()]);
++        let box_mk_fun = ident_apply(&ctx.name_ctxt.prefix_box(dpath), &vec![mk_fun.clone()]);
+         let has_box_mk_fun = expr_has_type(&box_mk_fun, &id);
+         let trigs = vec![has_box_mk_fun.clone()];
+         let name = format!("{}_{}", path_as_friendly_rust_name(dpath), QID_CONSTRUCTOR);
+@@ -273,6 +273,27 @@
+         let axiom = mk_unnamed_axiom(forall);
+         axiom_commands.push(Arc::new(CommandX::Global(axiom)));
+ 
++        // SpecFn tagged-function apply axiom:
++        // forall typ1 ... typn, tret, arg1: Poly ... argn: Poly, x: Fun.
++        //   has_type1 && ... && has_typen ==>
++        //     apply(mk_fun(FUN(typ1...typn, tret), x), args) == apply(x, args)
++        //
++        // mk_fun is deliberately not equal to x: keeping the static SpecFn type in the
++        // function term prevents equality proved at one function type from escaping into
++        // another function type. On well-typed arguments, however, the tagged function
++        // has exactly the behavior of the function it wraps.
++        let mk_fun_app =
++            Arc::new(ExprX::ApplyFun(apolytyp.clone(), mk_fun.clone(), args.clone()));
++        let mut mk_fun_params = params.clone();
++        mk_fun_params.push(x_param(&datatyp));
++        let trigs = vec![mk_fun_app.clone()];
++        let name = format!("{}_mk_fun_apply", path_as_friendly_rust_name(dpath));
++        let bind = func_bind_trig(
++            ctx,
++            name,
++            tparams,
++            &Arc::new(mk_fun_params),
++            &trigs,
++            None,
++        );
++        let imply = mk_implies(&inner_pre, &mk_eq(&mk_fun_app, &app));
++        let forall = mk_bind_expr(&bind, &imply);
++        axiom_commands.push(Arc::new(CommandX::Global(mk_unnamed_axiom(forall))));
++
+         // SpecFn apply axiom:
+         // forall typ1 ... typn, tret, arg1: Poly ... argn: Poly, x: Fun.
+         //   has_type_f && has_type1 && ... && has_typen => has_type(apply(x, args), tret)
+diff --git a/source/rust_verify_test/tests/closures.rs b/source/rust_verify_test/tests/closures.rs
+--- a/source/rust_verify_test/tests/closures.rs
++++ b/source/rust_verify_test/tests/closures.rs
+@@ -160,6 +160,59 @@
+     } => Ok(())
+ }
+ 
++test_verify_one_file! {
++    #[test] issue_3010_same_type_extensionality verus_code! {
++        proof fn same_type_extensionality() {
++            let f = |x: nat| true;
++            let g = |x: nat| x >= 0;
++            assert(f =~= g);
++            assert(f == g);
++        }
++    } => Ok(())
++}
++
++test_verify_one_file! {
++    #[test] issue_3010_lambda_parameter_type_does_not_leak verus_code! {
++        proof fn lambda_parameter_type_does_not_leak() {
++            // These are extensionally equal as nat functions.
++            assert((|x: nat| true) =~= (|x: nat| x >= 0));
++
++            // The int closure has the same erased AIR lambda body as the second nat
++            // closure, but equality at spec_fn(nat) must not constrain its int behavior.
++            assert((|x: int| x >= 0)(-1int)); // FAILS
++        }
++    } => Err(err) => assert_one_fails(err)
++}
++
++test_verify_one_file! {
++    #[test] issue_3010_quantified_function_type_does_not_leak verus_code! {
++        proof fn quantified_function_type_does_not_leak() {
++            let f = |x: int| x >= 0;
++            let g = |x: int| true;
++
++            assert forall|p: spec_fn(nat) -> bool, q: spec_fn(nat) -> bool|
++                #![trigger p(0nat), q(0nat)]
++                (forall|x: nat| #[trigger] p(x) == q(x)) implies p == q by {
++                assert(p =~= q);
++            }
++
++            assert(f(0int) && g(0int));
++            // f and g agree on nat, but they are int functions and differ at -1.
++            // The nat extensionality fact above must therefore not be instantiated
++            // with f and g.
++            assert(f == g); // FAILS
++        }
++    } => Err(err) => assert_one_fails(err)
++}
++
+ test_verify_one_file! {
+     #[test] return_in_closure verus_code! {
+         proof fn p(){
