@@ -1,0 +1,62 @@
+name: Validate Verus 3010 repair
+
+on:
+  push:
+    branches:
+      - ci/verus-3010-repair
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Checkout validation carrier
+        uses: actions/checkout@v6
+
+      - name: Checkout pinned Verus upstream
+        uses: actions/checkout@v6
+        with:
+          repository: verus-lang/verus
+          ref: d85f75780de687461a30e7771985c4a3e9ea0e58
+          path: verus
+
+      - name: Apply repair
+        run: |
+          git -C verus apply --check "$GITHUB_WORKSPACE/ci/verus-3010.patch"
+          git -C verus apply "$GITHUB_WORKSPACE/ci/verus-3010.patch"
+          git -C verus diff --check
+          git -C verus diff --stat
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.98.1
+          components: rustc,rust-std,cargo,rustfmt,rustc-dev,llvm-tools
+
+      - name: Get Z3
+        working-directory: verus/source
+        run: |
+          ./tools/get-z3.sh
+          ./z3 --version
+
+      - name: Check formatting
+        working-directory: verus/source
+        run: cargo fmt -- --check
+
+      - name: Build Verus and vstd
+        working-directory: verus/source
+        run: |
+          cargo build
+          cargo run -p cargo-verus -- build --manifest-path vstd/Cargo.toml
+
+      - name: Run issue 3010 regression tests
+        working-directory: verus/source
+        run: cargo test -p rust_verify_test --test closures issue_3010 -- --nocapture
+
+      - name: Run full closures suite
+        working-directory: verus/source
+        run: cargo test -p rust_verify_test --test closures -- --nocapture
