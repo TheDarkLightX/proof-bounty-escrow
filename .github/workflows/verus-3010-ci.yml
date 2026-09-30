@@ -26,10 +26,10 @@ jobs:
 
       - name: Apply repair
         run: |
-          git -C verus apply --check "$GITHUB_WORKSPACE/ci/verus-3010.patch"
-          git -C verus apply "$GITHUB_WORKSPACE/ci/verus-3010.patch"
-          git -C verus diff --check
-          git -C verus diff --stat
+          cd verus
+          python "$GITHUB_WORKSPACE/ci/apply-verus-3010.py"
+          git diff --check
+          git diff --stat
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@master
@@ -60,3 +60,15 @@ jobs:
       - name: Run full closures suite
         working-directory: verus/source
         run: cargo test -p rust_verify_test --test closures -- --nocapture
+
+      - name: Generate submission patch
+        run: |
+          git -C verus diff --binary > verus-3010-final.patch
+          git -C verus diff --check
+          test -s verus-3010-final.patch
+
+      - name: Upload submission patch
+        uses: actions/upload-artifact@v7
+        with:
+          name: verus-3010-final-patch
+          path: verus-3010-final.patch
