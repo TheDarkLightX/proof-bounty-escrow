@@ -64,20 +64,12 @@ insert = """        axiom_commands.push(Arc::new(CommandX::Global(axiom)));
         // but is intentionally unconstrained outside that domain. This prevents
         // extensional equality at one SpecFn type from constraining a function at a
         // different SpecFn type.
-        let mk_fun_app =
-            Arc::new(ExprX::ApplyFun(apolytyp.clone(), mk_fun.clone(), args.clone()));
+        let mk_fun_app = Arc::new(ExprX::ApplyFun(apolytyp.clone(), mk_fun.clone(), args.clone()));
         let mut mk_fun_params = params.clone();
         mk_fun_params.push(x_param(&datatyp));
         let trigs = vec![mk_fun_app.clone()];
         let name = format!("{}_mk_fun_apply", path_as_friendly_rust_name(dpath));
-        let bind = func_bind_trig(
-            ctx,
-            name,
-            tparams,
-            &Arc::new(mk_fun_params),
-            &trigs,
-            None,
-        );
+        let bind = func_bind_trig(ctx, name, tparams, &Arc::new(mk_fun_params), &trigs, None);
         let imply = mk_implies(&inner_pre, &mk_eq(&mk_fun_app, &app));
         let forall = mk_bind_expr(&bind, &imply);
         axiom_commands.push(Arc::new(CommandX::Global(mk_unnamed_axiom(forall))));
