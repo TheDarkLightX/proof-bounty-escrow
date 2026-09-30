@@ -120,6 +120,24 @@ test_verify_one_file! {
 }
 
 test_verify_one_file! {
+    #[test] issue_3010_multiarg_parameter_type_does_not_leak verus_code! {
+        proof fn multiarg_parameter_type_does_not_leak() {
+            assert((|x: nat, y: int| true) =~= (|x: nat, y: int| x >= 0));
+            assert((|x: int, y: int| x >= 0)(-1int, 0int)); // FAILS
+        }
+    } => Err(err) => assert_one_fails(err)
+}
+
+test_verify_one_file! {
+    #[test] issue_3010_bounded_integer_parameter_type_does_not_leak verus_code! {
+        proof fn bounded_integer_parameter_type_does_not_leak() {
+            assert((|x: u8| true) =~= (|x: u8| (x as int) < 256));
+            assert((|x: u16| (x as int) < 256)(300u16)); // FAILS
+        }
+    } => Err(err) => assert_one_fails(err)
+}
+
+test_verify_one_file! {
     #[test] return_in_closure verus_code! {
 """
 replace_once("source/rust_verify_test/tests/closures.rs", test_marker, tests)
